@@ -1,0 +1,21 @@
+// Place your settings in this file to overwrite default and user settings.
+{
+	"files.exclude": {
+		"out": false // set this to true to hide the "out" folder with the compiled JS files
+	},
+	"search.exclude": {
+		"out": true // set this to false to include "out" folder in search results
+	},
+	// Turn off tsc task auto detection since we have the necessary tasks as npm scripts
+	"js/ts.tsc.autoDetect": "off",
+	"chat.tools.terminal.autoApprove": {
+		"/^node -e 'const assert = require\\(\"node:assert/strict\"\\); const t = require\\(\"\\./out/timeData\\.js\"\\); assert\\.equal\\(t\\.durationMinutes\\(\\{date:\"2026-10-01\",task:\"Work\",timeIn:\"09:00\",timeOut:\"17:30\"\\}\\),510\\); assert\\.equal\\(t\\.durationMinutes\\(\\{date:\"2026-10-01\",task:\"Work\",timeIn:\"22:00\",timeOut:\"06:00\"\\}\\),480\\); assert\\.equal\\(t\\.durationMinutes\\(\\{date:\"2026-10-01\",task:\"Work\",timeIn:\"08:00\",timeOut:\"08:00\"\\}\\),0\\); assert\\.equal\\(t\\.customPeriodEnd\\(\"2026-10-21\"\\),\"2026-11-20\"\\); assert\\.equal\\(t\\.customPeriodEnd\\(\"2026-12-21\"\\),\"2027-01-20\"\\); assert\\.deepEqual\\(t\\.periodRange\\(\"weekly\",\"2026-11-08\"\\),\\{start:\"2026-11-02\",end:\"2026-11-08\"\\}\\); const html = require\\(\"\\./out/webview\\.js\"\\)\\.getWebviewHtml\\(\\{cspSource:\"vscode-resource:\"\\}\\); const script = html\\.split\\(\"<script nonce=\\\\\"\"\\)\\[1\\]\\.split\\(\">\"\\)\\[1\\]\\.split\\(\"</script>\"\\)\\[0\\]; new Function\\(script\\); console\\.log\\(\"Calculation assertions and webview script syntax passed\"\\);'$/": {
+			"approve": true,
+			"matchCommandLine": true
+		},
+		"/^@'\nconst assert = require\\(\"node:assert/strict\"\\);\nconst t = require\\(\"\\./out/timeData\\.js\"\\);\nassert\\.equal\\(t\\.durationMinutes\\(\\{ date: \"2026-10-01\", task: \"Work\", timeIn: \"09:00\", timeOut: \"17:30\" \\}\\), 510\\);\nassert\\.equal\\(t\\.durationMinutes\\(\\{ date: \"2026-10-01\", task: \"Work\", timeIn: \"22:00\", timeOut: \"06:00\" \\}\\), 480\\);\nassert\\.equal\\(t\\.durationMinutes\\(\\{ date: \"2026-10-01\", task: \"Work\", timeIn: \"08:00\", timeOut: \"08:00\" \\}\\), 0\\);\nassert\\.equal\\(t\\.customPeriodEnd\\(\"2026-10-21\"\\), \"2026-11-20\"\\);\nassert\\.equal\\(t\\.customPeriodEnd\\(\"2026-12-21\"\\), \"2027-01-20\"\\);\nassert\\.deepEqual\\(t\\.periodRange\\(\"weekly\", \"2026-11-08\"\\), \\{ start: \"2026-11-02\", end: \"2026-11-08\" \\}\\);\nconst html = require\\(\"\\./out/webview\\.js\"\\)\\.getWebviewHtml\\(\\{ cspSource: \"vscode-resource:\" \\}\\);\nconst script = html\\.split\\(\"<script nonce=\\\\\"\"\\)\\[1\\]\\.split\\(\">\"\\)\\[1\\]\\.split\\(\"</script>\"\\)\\[0\\];\nnew Function\\(script\\);\nconsole\\.log\\(\"Calculation assertions and webview script syntax passed\"\\);\n'@ \\| node$/": {
+			"approve": true,
+			"matchCommandLine": true
+		}
+	}
+}
