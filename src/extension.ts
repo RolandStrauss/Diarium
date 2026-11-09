@@ -1,8 +1,12 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
-import { isValidDate, validateEntry, type TimeEntry } from './timeData';
+import { customPeriodEnd, isValidDate, validateEntry, type TimeEntry } from './timeData';
+import { renderReportPdf } from './pdfReport';
 
 const STORAGE_KEY = 'time-tracker.data';
 const DEFAULT_PERIOD_START = '2026-10-21';
@@ -124,6 +128,40 @@ export function activate(context: vscode.ExtensionContext): void {
 					await context.globalState.update(STORAGE_KEY, state);
 					postState();
 					break;
+				case 'requestReportAction': {
+					const action = await vscode.window.showQuickPick([
+						{ label: 'Print report', detail: 'Open the system print dialog', value: 'print' },
+						{ label: 'Save as PDF', detail: 'Choose a location and save a PDF file', value: 'pdf' },
+					], { placeHolder: 'Choose how to export this report' });
+					if (action?.value === 'print') {
+						await panel.webview.postMessage({ type: 'printReport' });
+						break;
+					}
+					if (action?.value === 'pdf') {
+						const filename = `timesheet-${state.periodStart}-to-${customPeriodEnd(state.periodStart)}.pdf`;
+						const baseDirectory = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(homedir());
+						const destination = await vscode.window.showSaveDialog({
+							defaultUri: vscode.Uri.joinPath(baseDirectory, filename),
+							filters: { 'PDF documents': ['pdf'] },
+							saveLabel: 'Save PDF',
+						});
+						if (!destination) {
+							break;
+						}
+						try {
+							const pdf = await renderReportPdf(state);
+							const filePath = path.extname(destination.fsPath).toLowerCase() === '.pdf'
+								? destination.fsPath
+								: `${destination.fsPath}.pdf`;
+							await writeFile(filePath, pdf);
+							void vscode.window.showInformationMessage(`PDF saved to ${filePath}`);
+						} catch (error) {
+							const reason = error instanceof Error ? error.message : String(error);
+							void vscode.window.showErrorMessage(`Could not save the PDF: ${reason}`);
+						}
+					}
+					break;
+				}
 			}
 		});
 	});

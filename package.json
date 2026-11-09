@@ -1,7 +1,7 @@
 {
   "name": "time-tracker",
   "displayName": "Time Tracker",
-  "description": "Record work time and print local timesheet reports.",
+  "description": "Record work time and export local timesheet reports.",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.140.0"
@@ -30,17 +30,21 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.140.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
-    "typescript-eslint": "^8.61.1",
+    "@types/pdfkit": "^0.17.7",
+    "@types/vscode": "^1.140.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
     "eslint": "^10.5.0",
     "typescript": "^6.0.3",
-    "@vscode/test-cli": "^0.0.15",
-    "@vscode/test-electron": "^3.0.0"
+    "typescript-eslint": "^8.61.1"
   },
   "overrides": {
     "diff": "^8.0.4",
     "serialize-javascript": "^7.0.6"
+  },
+  "dependencies": {
+    "pdfkit": "^0.20.2"
   }
 }

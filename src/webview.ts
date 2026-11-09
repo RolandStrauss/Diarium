@@ -133,10 +133,10 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <label>Period start<input id="period-start" type="date" aria-label="Period start date"></label>
 <label>Period end<input id="period-end" type="date" readonly aria-label="Calculated period end date"></label>
 <label>Hourly rate<input id="hourly-rate" type="number" min="0" step="0.01" placeholder="Not set" aria-label="Hourly rate"></label>
-<button id="print-button" class="primary" type="button" title="Print period report">Print report</button>
+<button id="print-button" class="primary" type="button" title="Choose print or PDF export">Print / Save PDF</button>
 </div>
 <div class="report-heading"><h2 id="report-title">Reporting period</h2><span id="report-days" class="subtle"></span></div>
-<p id="print-warning" role="status">Check print preview before printing: use landscape A4 and confirm the full report fits on one page. Adjust print settings if it spans pages.</p>
+<p id="print-warning" role="status">Print layout uses landscape A4. You can also save a PDF directly to disk.</p>
 <div id="report-error" class="error" role="alert" aria-live="assertive"></div>
 <div class="table-wrap"><table id="report-table" aria-label="Custom reporting cycle">
 <thead><tr><th scope="col">Date</th><th scope="col">Day</th><th scope="col">Task</th><th scope="col">Time In</th><th scope="col">Time Out</th><th scope="col">Duration</th></tr></thead>
@@ -256,12 +256,13 @@ byId('add-date').value = localDateValue();
 byId('add-form').addEventListener('submit', (event) => { event.preventDefault(); const entry = { date: byId('add-date').value, task: byId('add-task').value.trim(), timeIn: byId('add-in').value, timeOut: byId('add-out').value }; setError('entries-error', ''); vscode.postMessage({ type: 'createEntry', entry }); });
 byId('period-start').addEventListener('change', () => { setError('report-error', ''); vscode.postMessage({ type: 'setPeriodStart', value: byId('period-start').value }); });
 byId('hourly-rate').addEventListener('change', () => { const value = byId('hourly-rate').value; vscode.postMessage({ type: 'setHourlyRate', value }); });
-byId('print-button').addEventListener('click', () => { setView('report'); window.print(); });
+byId('print-button').addEventListener('click', () => vscode.postMessage({ type: 'requestReportAction' }));
 window.addEventListener('message', (event) => {
  const message = event.data;
  if (message.type === 'state') { data = message.data; renderYearSelect(); byId('hourly-rate').value = data.hourlyRate === null ? '' : String(data.hourlyRate); render(); }
  if (message.type === 'saved') { data = message.data; byId('hourly-rate').value = data.hourlyRate === null ? '' : String(data.hourlyRate); render(); }
  if (message.type === 'error') setError(message.view === 'report' ? 'report-error' : 'entries-error', message.message);
+ if (message.type === 'printReport') { setView('report'); window.print(); }
 });
 vscode.postMessage({ type: 'ready' });
 </script>

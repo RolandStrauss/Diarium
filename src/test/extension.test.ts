@@ -4,6 +4,7 @@ import * as assert from 'assert';
 // as well as import your extension to test it
 import * as vscode from 'vscode';
 import { customPeriodEnd, durationMinutes, isIncomplete, isValidDate, isValidTime, periodRange, validateEntry } from '../timeData';
+import { renderReportPdf } from '../pdfReport';
 
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
@@ -37,5 +38,18 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(isIncomplete(entry), true);
 		assert.strictEqual(validateEntry({ ...entry, date: '2026-02-30' }), 'Enter a valid calendar date.');
 		assert.strictEqual(validateEntry({ ...entry, timeIn: '25:00' }), 'Time In must use 24-hour HH:mm format.');
+	});
+
+	test('renders the custom period as a PDF document', async () => {
+		const pdf = await renderReportPdf({
+			entries: {
+				'2026-10-24': { date: '2026-10-24', task: 'Weekend work', timeIn: '09:00', timeOut: '10:00' },
+				'2026-10-25': { date: '2026-10-25', task: 'Partial work', timeIn: '11:00', timeOut: '' },
+			},
+			periodStart: '2026-10-21',
+			hourlyRate: 20,
+		});
+		assert.strictEqual(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
+		assert.strictEqual(pdf.includes(Buffer.from('%%EOF')), true);
 	});
 });
