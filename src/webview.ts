@@ -136,7 +136,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <button id="print-button" class="primary" type="button" title="Choose print or PDF export">Print / Save PDF</button>
 </div>
 <div class="report-heading"><h2 id="report-title">Reporting period</h2><span id="report-days" class="subtle"></span></div>
-<p id="print-warning" role="status">Print layout uses landscape A4. You can also save a PDF directly to disk.</p>
+<p id="print-warning" role="status">Print opens a landscape A4 PDF in your default viewer; use its Print command. You can also save a PDF directly to disk.</p>
 <div id="report-error" class="error" role="alert" aria-live="assertive"></div>
 <div class="table-wrap"><table id="report-table" aria-label="Custom reporting cycle">
 <thead><tr><th scope="col">Date</th><th scope="col">Day</th><th scope="col">Task</th><th scope="col">Time In</th><th scope="col">Time Out</th><th scope="col">Duration</th></tr></thead>
@@ -262,7 +262,6 @@ window.addEventListener('message', (event) => {
  if (message.type === 'state') { data = message.data; renderYearSelect(); byId('hourly-rate').value = data.hourlyRate === null ? '' : String(data.hourlyRate); render(); }
  if (message.type === 'saved') { data = message.data; byId('hourly-rate').value = data.hourlyRate === null ? '' : String(data.hourlyRate); render(); }
  if (message.type === 'error') setError(message.view === 'report' ? 'report-error' : 'entries-error', message.message);
- if (message.type === 'printReport') { setView('report'); window.print(); }
 });
 vscode.postMessage({ type: 'ready' });
 </script>

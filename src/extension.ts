@@ -1,7 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
@@ -9,6 +9,7 @@ import { customPeriodEnd, isValidDate, validateEntry, type TimeEntry } from './t
 import { renderReportPdf } from './pdfReport';
 
 const STORAGE_KEY = 'time-tracker.data';
+const STORAGE_FILE = 'timesheet.json';
 const DEFAULT_PERIOD_START = '2026-10-21';
 
 interface TrackerState {
@@ -17,8 +18,7 @@ interface TrackerState {
 	hourlyRate: number | null;
 }
 
-function readState(context: vscode.ExtensionContext): TrackerState {
-	const stored = context.globalState.get<Partial<TrackerState>>(STORAGE_KEY, {});
+function parseState(stored: Partial<TrackerState> = {}): TrackerState {
 	const entries: Record<string, TimeEntry> = {};
 	if (stored.entries && typeof stored.entries === 'object') {
 		for (const [date, candidate] of Object.entries(stored.entries)) {
@@ -39,15 +39,55 @@ function readState(context: vscode.ExtensionContext): TrackerState {
 	return { entries, periodStart, hourlyRate };
 }
 
+function stateFile(context: vscode.ExtensionContext): string {
+	return path.join(context.globalStorageUri.fsPath, STORAGE_FILE);
+}
+
+async function writeState(context: vscode.ExtensionContext, state: TrackerState): Promise<void> {
+	const file = stateFile(context);
+	await mkdir(path.dirname(file), { recursive: true });
+	const temporaryFile = `${file}.${process.pid}.${Date.now()}.tmp`;
+	await writeFile(temporaryFile, JSON.stringify(state, null, 2), 'utf8');
+	await rename(temporaryFile, file);
+}
+
+async function readState(context: vscode.ExtensionContext): Promise<TrackerState> {
+	try {
+		const contents = await readFile(stateFile(context), 'utf8');
+		return parseState(JSON.parse(contents) as Partial<TrackerState>);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+			throw error;
+		}
+	}
+
+	const migratedState = parseState(context.globalState.get<Partial<TrackerState>>(STORAGE_KEY));
+	await writeState(context, migratedState);
+	return migratedState;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
-	const disposable = vscode.commands.registerCommand('time-tracker.openTimesheet', () => {
+	const disposable = vscode.commands.registerCommand('time-tracker.openTimesheet', async () => {
 		const panel = vscode.window.createWebviewPanel(
 			'timeTracker',
 			'Time Tracker',
 			vscode.ViewColumn.One,
 			{ enableScripts: true, retainContextWhenHidden: true },
 		);
-		const state = readState(context);
+		let state: TrackerState;
+		try {
+			state = await readState(context);
+		} catch (error) {
+			panel.dispose();
+			const reason = error instanceof Error ? error.message : String(error);
+			void vscode.window.showErrorMessage(`Could not load the Time Tracker JSON data: ${reason}`);
+			return;
+		}
+		let writeQueue = Promise.resolve();
+		const persistState = (): Promise<void> => {
+			writeQueue = writeQueue.then(() => writeState(context, state));
+			return writeQueue;
+		};
 		panel.webview.html = getWebviewHtml(panel.webview);
 
 		const postState = (): void => {
@@ -73,7 +113,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				timeIn: entry.timeIn,
 				timeOut: entry.timeOut,
 			};
-			await context.globalState.update(STORAGE_KEY, state);
+			await persistState();
 			postState();
 		};
 
@@ -91,7 +131,7 @@ export function activate(context: vscode.ExtensionContext): void {
 					if (message.entry) {
 						if (!message.entry.task.trim() && !message.entry.timeIn && !message.entry.timeOut) {
 							delete state.entries[message.entry.date];
-							await context.globalState.update(STORAGE_KEY, state);
+							await persistState();
 							postState();
 						} else {
 							await saveEntry(message.entry, false, message.view ?? 'entries');
@@ -101,7 +141,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				case 'deleteEntry':
 					if (message.date) {
 						delete state.entries[message.date];
-						await context.globalState.update(STORAGE_KEY, state);
+						await persistState();
 						postState();
 					}
 					break;
@@ -111,7 +151,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						break;
 					}
 					state.periodStart = message.value;
-					await context.globalState.update(STORAGE_KEY, state);
+					await persistState();
 					postState();
 					break;
 				case 'setHourlyRate':
@@ -125,16 +165,31 @@ export function activate(context: vscode.ExtensionContext): void {
 						}
 						state.hourlyRate = rate;
 					}
-					await context.globalState.update(STORAGE_KEY, state);
+					await persistState();
 					postState();
 					break;
 				case 'requestReportAction': {
 					const action = await vscode.window.showQuickPick([
-						{ label: 'Print report', detail: 'Open the system print dialog', value: 'print' },
+						{ label: 'Print report', detail: 'Open a PDF in your default viewer, then choose Print', value: 'print' },
 						{ label: 'Save as PDF', detail: 'Choose a location and save a PDF file', value: 'pdf' },
 					], { placeHolder: 'Choose how to export this report' });
 					if (action?.value === 'print') {
-						await panel.webview.postMessage({ type: 'printReport' });
+						try {
+							const pdf = await renderReportPdf(state);
+							const directory = path.join(context.globalStorageUri.fsPath, 'print-reports');
+							await mkdir(directory, { recursive: true });
+							const printDirectory = await mkdtemp(path.join(directory, 'report-'));
+							const filename = `timesheet-${state.periodStart}-to-${customPeriodEnd(state.periodStart)}.pdf`;
+							const filePath = path.join(printDirectory, filename);
+							await writeFile(filePath, pdf);
+							if (!await vscode.env.openExternal(vscode.Uri.file(filePath))) {
+								throw new Error('No PDF viewer could be opened. Use Save as PDF and open the file manually.');
+							}
+							void vscode.window.showInformationMessage('Report opened in your default PDF viewer. Use its Print command to print.');
+						} catch (error) {
+							const reason = error instanceof Error ? error.message : String(error);
+							void vscode.window.showErrorMessage(`Could not open the report for printing: ${reason}`);
+						}
 						break;
 					}
 					if (action?.value === 'pdf') {

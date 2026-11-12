@@ -9,6 +9,10 @@ import { renderReportPdf } from '../pdfReport';
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
+	test('opens the timesheet command', async () => {
+		await vscode.commands.executeCommand('time-tracker.openTimesheet');
+	});
+
 	test('validates calendar dates and 24-hour times', () => {
 		assert.strictEqual(isValidDate('2024-02-29'), true);
 		assert.strictEqual(isValidDate('2025-02-29'), false);
