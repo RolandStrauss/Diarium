@@ -58,6 +58,8 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 .view[hidden] { display: none; }
 .report-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; padding: 15px 0 7px; }
 .report-heading h2 { font-size: 16px; margin: 0; }
+#tracked-active-file { overflow-wrap: anywhere; }
+#file-times-table td.file { overflow-wrap: anywhere; }
 #report-table { min-width: 640px; }
 #report-table td.task { width: 34%; }
 #report-table tr.weekend td:nth-child(2)::after { content: ' (Weekend)'; font-weight: 600; }
@@ -69,7 +71,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 	body { padding: 0; color: #111; background: #fff; font: 8pt Arial, sans-serif; }
 	header { position: static; border: 0; padding: 0; }
 	h1 { font-size: 14pt; margin: 0 0 4mm; color: #111; }
-	.tabs, .screen-only, #entries-view, .error, #print-warning { display: none !important; }
+	.tabs, .screen-only, #entries-view, #file-times-view, .error, #print-warning { display: none !important; }
 	#report-view { display: block !important; }
 	.table-wrap { overflow: visible; max-height: none; }
 	.report-heading { padding: 0 0 2mm; }
@@ -92,6 +94,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <nav class="tabs" aria-label="Timesheet views">
 <button id="entries-tab" role="tab" aria-selected="true" aria-controls="entries-view">Entries</button>
 <button id="report-tab" role="tab" aria-selected="false" aria-controls="report-view">Period report</button>
+<button id="file-times-tab" role="tab" aria-selected="false" aria-controls="file-times-view">File activity</button>
 </nav>
 </header>
 <main>
@@ -128,6 +131,18 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <tbody id="entries-body"></tbody>
 </table></div>
 </section>
+<section id="file-times-view" class="view" role="tabpanel" aria-labelledby="file-times-tab" hidden>
+<div class="toolbar"><div><h2>Automatic file tracking</h2><p class="subtle">Time accumulates while VS Code is focused and a local file is active, including idle periods. Totals stay separate from timesheet reports.</p></div></div>
+<div class="totals" aria-live="polite">
+<div class="metric"><strong id="tracked-total">0h 00m</strong><span>tracked time</span></div>
+<div class="metric"><strong id="tracked-file-count">0</strong><span>files tracked</span></div>
+<div class="metric"><strong id="tracked-active-file">No file active</strong><span>current file</span></div>
+</div>
+<div class="table-wrap"><table id="file-times-table" aria-label="Automatic file time totals">
+<thead><tr><th scope="col">File path</th><th scope="col">Tracked time</th><th scope="col">Status</th></tr></thead>
+<tbody id="file-times-body"></tbody>
+</table></div>
+</section>
 <section id="report-view" class="view" role="tabpanel" aria-labelledby="report-tab" hidden>
 <div class="period-controls screen-only">
 <label>Period start<input id="period-start" type="date" aria-label="Period start date"></label>
@@ -148,7 +163,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <script nonce="${scriptNonce}">
 const vscode = acquireVsCodeApi();
 const byId = (id) => document.getElementById(id);
-let data = { entries: {}, periodStart: '2026-10-21', hourlyRate: null };
+let data = { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null };
 const dateFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 function esc(value) { return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 function dateObj(value) { return new Date(value + 'T00:00:00Z'); }
@@ -218,6 +233,17 @@ function renderSummary() {
  byId('period-count').textContent = String(completed.length);
  byId('period-range').textContent = dateText(start) + ' – ' + dateText(end);
 }
+function renderFileTimes() {
+ const files = Object.entries(data.fileTimes || {}).filter(([file, milliseconds]) => Number.isFinite(milliseconds) && milliseconds >= 0 && (milliseconds > 0 || file === data.activeFile));
+ files.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+ const total = files.reduce((sum, [, milliseconds]) => sum + milliseconds, 0);
+ byId('tracked-total').textContent = durationText(Math.floor(total / 60000));
+ byId('tracked-file-count').textContent = String(files.length);
+ byId('tracked-active-file').textContent = data.activeFile || 'No file active';
+ byId('file-times-body').innerHTML = files.length
+  ? files.map(([file, milliseconds]) => '<tr><td class="file">' + esc(file) + '</td><td class="duration">' + durationText(Math.floor(milliseconds / 60000)) + '</td><td>' + (file === data.activeFile ? 'Active' : '') + '</td></tr>').join('')
+  : '<tr><td colspan="3" class="subtle">No files tracked yet.</td></tr>';
+}
 function renderReport() {
  const start = data.periodStart || '2026-10-21'; const end = periodEnd(start); byId('period-start').value = start; byId('period-end').value = end;
  byId('report-title').textContent = 'Period report: ' + dateText(start) + ' to ' + dateText(end);
@@ -238,13 +264,14 @@ function saveReportRow(event) {
  const row = event.target.closest('tr'); const entry = { date: row.dataset.date, task: row.querySelector('[data-field="task"]').value.trim(), timeIn: row.querySelector('[data-field="timeIn"]').value, timeOut: row.querySelector('[data-field="timeOut"]').value };
  row.querySelector('.print-task').textContent = entry.task; setError('report-error', ''); vscode.postMessage({ type: 'saveEntry', entry, view: 'report' });
 }
-function render() { renderEntries(); renderSummary(); renderReport(); }
+function render() { renderEntries(); renderSummary(); renderReport(); renderFileTimes(); }
 function setView(view) {
- activeView = view; byId('entries-view').hidden = view !== 'entries'; byId('report-view').hidden = view !== 'report';
- byId('entries-tab').setAttribute('aria-selected', String(view === 'entries')); byId('report-tab').setAttribute('aria-selected', String(view === 'report'));
+ byId('entries-view').hidden = view !== 'entries'; byId('report-view').hidden = view !== 'report'; byId('file-times-view').hidden = view !== 'file-times';
+ byId('entries-tab').setAttribute('aria-selected', String(view === 'entries')); byId('report-tab').setAttribute('aria-selected', String(view === 'report')); byId('file-times-tab').setAttribute('aria-selected', String(view === 'file-times'));
 }
 byId('entries-tab').addEventListener('click', () => setView('entries'));
 byId('report-tab').addEventListener('click', () => setView('report'));
+byId('file-times-tab').addEventListener('click', () => setView('file-times'));
 byId('year-select').addEventListener('change', renderEntries);
 byId('summary-kind').addEventListener('change', renderSummary);
 byId('summary-date').value = localDateValue();
@@ -261,6 +288,7 @@ window.addEventListener('message', (event) => {
  const message = event.data;
  if (message.type === 'state') { data = message.data; renderYearSelect(); byId('hourly-rate').value = data.hourlyRate === null ? '' : String(data.hourlyRate); render(); }
  if (message.type === 'saved') { data = message.data; byId('hourly-rate').value = data.hourlyRate === null ? '' : String(data.hourlyRate); render(); }
+ if (message.type === 'fileTimes') { data.fileTimes = message.data.fileTimes; data.activeFile = message.data.activeFile; renderFileTimes(); }
  if (message.type === 'error') setError(message.view === 'report' ? 'report-error' : 'entries-error', message.message);
 });
 vscode.postMessage({ type: 'ready' });

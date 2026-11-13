@@ -41,14 +41,19 @@ suite('Report actions', () => {
 				},
 			},
 			window: {
+				state: { focused: false },
+				activeTextEditor: undefined,
 				createWebviewPanel: () => ({
 					webview: {
 						cspSource: 'test',
 						postMessage: async (message: { type: string }) => { messages.push(message); return true; },
 						onDidReceiveMessage: (callback: typeof receiveMessage) => { receiveMessage = callback; },
 					},
+					onDidDispose: () => ({ dispose: () => {} }),
 					dispose: () => {},
 				}),
+				onDidChangeActiveTextEditor: () => ({ dispose: () => {} }),
+				onDidChangeWindowState: () => ({ dispose: () => {} }),
 				showQuickPick: async () => action ? { value: action } : undefined,
 				showSaveDialog: async () => {
 					saveDialogs++;
@@ -60,7 +65,7 @@ suite('Report actions', () => {
 		};
 		const context = {
 			globalStorageUri: { fsPath: directory },
-			globalState: { get: () => undefined },
+			globalState: { get: () => undefined, update: async () => {} },
 			subscriptions: [],
 		};
 		const filename = path.join(__dirname, '..', 'extension.js');
@@ -71,6 +76,8 @@ suite('Report actions', () => {
 			exports: module.exports,
 			require: (id: string) => id === 'vscode' ? api : realRequire(id),
 			process, Buffer, console,
+			setInterval: () => 1,
+			clearInterval: () => {},
 		}, { filename });
 		module.exports.activate(context);
 		assert.ok(openTimesheet);

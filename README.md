@@ -6,6 +6,12 @@ A local-first Visual Studio Code extension for recording daily work time and exp
 
 Run **Time Tracker: Open Timesheet** from the Command Palette.
 
+- File activity starts automatically. It tracks local files while the VS Code
+  window is focused, counts idle periods, pauses when focus leaves, and persists
+  totals across sessions. Open **File activity** to review per-file totals.
+- File activity uses VS Code extension storage across workspaces. It stores
+  local file paths and durations. It does not track untitled or virtual files,
+  and it stays separate from daily entries and PDF reports.
 - Record one task and time pair per date. A time out earlier than time in is treated as an overnight shift.
 - Browse the 365 or 366 dates in a calendar year, filter by date or task, and review filtered totals.
 - Review daily, Monday-to-Sunday weekly, monthly, or yearly totals.

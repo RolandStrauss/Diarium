@@ -5,6 +5,7 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { customPeriodEnd, durationMinutes, isIncomplete, isValidDate, isValidTime, periodRange, validateEntry } from '../timeData';
 import { renderReportPdf } from '../pdfReport';
+import { FileTimeTracker, parseFileTimeTotals } from '../fileTimeTracker';
 
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
@@ -42,6 +43,42 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(isIncomplete(entry), true);
 		assert.strictEqual(validateEntry({ ...entry, date: '2026-02-30' }), 'Enter a valid calendar date.');
 		assert.strictEqual(validateEntry({ ...entry, timeIn: '25:00' }), 'Time In must use 24-hour HH:mm format.');
+	});
+
+	test('tracks each file separately, pauses without an active file, and restores saved totals', async () => {
+		let now = 1000;
+		let saved: Record<string, number> = {};
+		const tracker = new FileTimeTracker({}, async totals => { saved = totals; }, () => now);
+
+		await tracker.setActiveFile('C:\\work\\first.ts');
+		now += 90_000;
+		await tracker.setActiveFile(undefined);
+		now += 30_000;
+		await tracker.setActiveFile('C:\\work\\second.ts');
+		now += 60_000;
+		await tracker.checkpoint();
+
+		assert.deepStrictEqual(tracker.snapshot(), {
+			fileTimes: { 'C:\\work\\first.ts': 90_000, 'C:\\work\\second.ts': 60_000 },
+			activeFile: 'C:\\work\\second.ts',
+		});
+		assert.deepStrictEqual(saved, tracker.snapshot().fileTimes);
+
+		const restored = new FileTimeTracker(saved, async () => {}, () => now);
+		assert.deepStrictEqual(restored.snapshot(), {
+			fileTimes: saved,
+			activeFile: null,
+		});
+	});
+
+	test('ignores malformed persisted file totals', () => {
+		assert.deepStrictEqual(parseFileTimeTotals({
+			'C:\\work\\valid.ts': 1200,
+			'C:\\work\\negative.ts': -1,
+			'C:\\work\\string.ts': '500',
+			'C:\\work\\infinite.ts': Infinity,
+		}), { 'C:\\work\\valid.ts': 1200 });
+		assert.deepStrictEqual(parseFileTimeTotals([]), {});
 	});
 
 	test('renders the custom period as a PDF document', async () => {

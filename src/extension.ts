@@ -7,9 +7,11 @@ import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
 import { customPeriodEnd, isValidDate, validateEntry, type TimeEntry } from './timeData';
 import { renderReportPdf } from './pdfReport';
+import { FileTimeTracker } from './fileTimeTracker';
 
 const STORAGE_KEY = 'time-tracker.data';
 const STORAGE_FILE = 'timesheet.json';
+const FILE_TIMES_STORAGE_KEY = 'time-tracker.file-times';
 const DEFAULT_PERIOD_START = '2026-10-21';
 
 interface TrackerState {
@@ -17,6 +19,8 @@ interface TrackerState {
 	periodStart: string;
 	hourlyRate: number | null;
 }
+
+let fileTimeTracker: FileTimeTracker | undefined;
 
 function parseState(stored: Partial<TrackerState> = {}): TrackerState {
 	const entries: Record<string, TimeEntry> = {};
@@ -67,6 +71,45 @@ async function readState(context: vscode.ExtensionContext): Promise<TrackerState
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+	fileTimeTracker = new FileTimeTracker(
+		context.globalState.get<unknown>(FILE_TIMES_STORAGE_KEY),
+		async fileTimes => context.globalState.update(FILE_TIMES_STORAGE_KEY, fileTimes),
+	);
+	const fileTimePanels = new Set<vscode.WebviewPanel>();
+	const showFileTimePersistenceError = (error: unknown): void => {
+		const reason = error instanceof Error ? error.message : String(error);
+		void vscode.window.showErrorMessage(`Could not save automatic file time data: ${reason}`);
+	};
+	const postFileTimes = (): void => {
+		const snapshot = fileTimeTracker?.snapshot();
+		if (!snapshot) {
+			return;
+		}
+		for (const panel of fileTimePanels) {
+			void panel.webview.postMessage({ type: 'fileTimes', data: snapshot });
+		}
+	};
+	const trackActiveFile = (): void => {
+		const editor = vscode.window.activeTextEditor;
+		const filePath = vscode.window.state.focused && editor?.document.uri.scheme === 'file'
+			? editor.document.uri.fsPath
+			: undefined;
+		void fileTimeTracker?.setActiveFile(filePath).then(postFileTimes, error => {
+			showFileTimePersistenceError(error);
+			postFileTimes();
+		});
+	};
+	trackActiveFile();
+
+	const activeEditorListener = vscode.window.onDidChangeActiveTextEditor(trackActiveFile);
+	const windowStateListener = vscode.window.onDidChangeWindowState(trackActiveFile);
+	const fileTimeInterval = setInterval(() => {
+		void fileTimeTracker?.checkpoint().then(postFileTimes, error => {
+			showFileTimePersistenceError(error);
+			postFileTimes();
+		});
+	}, 60_000);
+
 	const disposable = vscode.commands.registerCommand('time-tracker.openTimesheet', async () => {
 		const panel = vscode.window.createWebviewPanel(
 			'timeTracker',
@@ -88,10 +131,12 @@ export function activate(context: vscode.ExtensionContext): void {
 			writeQueue = writeQueue.then(() => writeState(context, state));
 			return writeQueue;
 		};
+		fileTimePanels.add(panel);
+		panel.onDidDispose(() => fileTimePanels.delete(panel));
 		panel.webview.html = getWebviewHtml(panel.webview);
 
-		const postState = (): void => {
-			void panel.webview.postMessage({ type: 'saved', data: state });
+		const postState = (type: 'saved' | 'state'): void => {
+			void panel.webview.postMessage({ type, data: { ...state, ...fileTimeTracker?.snapshot() } });
 		};
 		const saveEntry = async (entry: TimeEntry, create: boolean, view: 'entries' | 'report'): Promise<void> => {
 			if (create && state.entries[entry.date]) {
@@ -114,13 +159,13 @@ export function activate(context: vscode.ExtensionContext): void {
 				timeOut: entry.timeOut,
 			};
 			await persistState();
-			postState();
+			postState('saved');
 		};
 
 		panel.webview.onDidReceiveMessage(async (message: { type: string; entry?: TimeEntry; date?: string; value?: string; view?: 'entries' | 'report' }) => {
 			switch (message.type) {
 				case 'ready':
-					await panel.webview.postMessage({ type: 'state', data: state });
+					postState('state');
 					break;
 				case 'createEntry':
 					if (message.entry) {
@@ -132,7 +177,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						if (!message.entry.task.trim() && !message.entry.timeIn && !message.entry.timeOut) {
 							delete state.entries[message.entry.date];
 							await persistState();
-							postState();
+							postState('saved');
 						} else {
 							await saveEntry(message.entry, false, message.view ?? 'entries');
 						}
@@ -142,7 +187,7 @@ export function activate(context: vscode.ExtensionContext): void {
 					if (message.date) {
 						delete state.entries[message.date];
 						await persistState();
-						postState();
+						postState('saved');
 					}
 					break;
 				case 'setPeriodStart':
@@ -152,7 +197,7 @@ export function activate(context: vscode.ExtensionContext): void {
 					}
 					state.periodStart = message.value;
 					await persistState();
-					postState();
+					postState('saved');
 					break;
 				case 'setHourlyRate':
 					if (message.value === '') {
@@ -166,7 +211,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						state.hourlyRate = rate;
 					}
 					await persistState();
-					postState();
+					postState('saved');
 					break;
 				case 'requestReportAction': {
 					const action = await vscode.window.showQuickPick([
@@ -221,7 +266,15 @@ export function activate(context: vscode.ExtensionContext): void {
 		});
 	});
 
-	context.subscriptions.push(disposable);
+	context.subscriptions.push(
+		disposable,
+		activeEditorListener,
+		windowStateListener,
+		{ dispose: () => clearInterval(fileTimeInterval) },
+	);
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> {
+	await fileTimeTracker?.setActiveFile(undefined);
+	fileTimeTracker = undefined;
+}

@@ -2,7 +2,7 @@
   "name": "time-tracker",
   "displayName": "Time Tracker",
   "description": "Record work time and export local timesheet reports.",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.140.0"
   },
@@ -10,7 +10,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:time-tracker.openTimesheet"
+    "onCommand:time-tracker.openTimesheet",
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
