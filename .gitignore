@@ -5,6 +5,9 @@
 # Python local virtual environments
 .venv/
 
+.vscode-test
+.vscode-test/*
+
 # Auto-generated graphify artifacts (local-only)
 graphify-out/
 

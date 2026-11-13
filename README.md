@@ -6,6 +6,8 @@ A local-first Visual Studio Code extension for recording daily work time and exp
 
 Run **Time Tracker: Open Timesheet** from the Command Palette.
 
+- The status bar shows total file time and current-file time. Click it to open
+  the Time Tracker panel.
 - File activity starts automatically. It tracks local files while the VS Code
   window is focused, counts idle periods, pauses when focus leaves, and persists
   totals across sessions. Open **File activity** to review per-file totals.
@@ -20,12 +22,35 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 
 The initial reporting period starts on 21 October 2026. Its end date is calculated automatically. The hourly estimate is informational and does not represent payroll or an invoice.
 
+## Time cards
+
+Run **Time Tracker: Preview Time Card** from the Command Palette, or choose
+**Preview time card** in **File activity**.
+
+- Cards summarize all-time automatic file activity across workspaces, not timesheet entries.
+  They include idle time while VS Code is focused.
+- The preview uses a green-and-gold gradient, animated progress bars, and a responsive layout.
+  Motion stops when reduced motion is enabled and when printing.
+- **Save HTML** exports a standalone, offline card with no scripts or external assets.
+  Open it in a browser to share or print. **Save PDF** exports a static A4 card using
+  the existing PDF engine. Long lists continue across pages; no files are omitted.
+- **Refresh snapshot** updates the preview. Exports use the displayed snapshot, not changing live totals.
+  The snapshot timestamp uses UTC. Durations display whole minutes; percentages use unrounded time.
+- Exports contain file names only, not directory paths. Repeated names are numbered.
+  Review file names before sharing because names can contain sensitive information.
+- PDF cards support Latin file names. For other scripts or emoji, save HTML and use your
+  browser's print-to-PDF option. The extension reports unsupported names instead of corrupting them.
+
+Existing timesheet reports and tracking data remain unchanged. Exporting does not reset tracked time.
+
 ## Development
 
 - `npm run compile` compiles the extension.
 - `npm run lint` checks the source.
 - `npm test` runs the VS Code extension tests against the bundled extension; the test runner downloads a VS Code instance when one is not already available.
-- `npm run package:optimized` builds a VSIX with the PDF runtime dependencies included.
+- `npm run package:optimized` builds a smaller VSIX by excluding repository-only
+  instructions and dependency-manager caches. Required PDF runtime dependencies
+  remain included.
 
 
 Made with ❤️ for better productivity

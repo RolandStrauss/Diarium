@@ -1,0 +1,31 @@
+- main [ref=e2]:
+  - paragraph [ref=e3]: Time Tracker / File activity
+  - heading "Time well spent." [level=1] [ref=e4]
+  - paragraph [ref=e5]:
+    - text: "Snapshot:"
+    - time [ref=e6]: 2026-11-13 08:09:05.211 UTC
+  - region "Activity summary" [ref=e7]:
+    - generic [ref=e8]:
+      - strong [ref=e9]: 4h 10m
+      - generic [ref=e10]: Total tracked time
+    - generic [ref=e11]:
+      - strong [ref=e12]: "4"
+      - generic [ref=e13]: Files tracked
+  - list "Tracked files" [ref=e14]:
+    - listitem [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: extension.ts
+        - generic [ref=e18]: 2h 00m 48.0%
+    - listitem [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e22]: timeCard.ts
+        - generic [ref=e23]: 1h 30m 36.0%
+    - listitem [ref=e25]:
+      - generic [ref=e26]:
+        - generic [ref=e27]: reportActions.test.ts
+        - generic [ref=e28]: 0h 30m 12.0%
+    - listitem [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e32]: README.md
+        - generic [ref=e33]: 0h 10m 4.0%
+  - generic [ref=e35]: All-time file activity across workspaces, including idle time while focused. Not a timesheet or billable-hours report. Durations display whole minutes; shares use unrounded time. Only file names are included; repeated names are numbered. Review file names before sharing.

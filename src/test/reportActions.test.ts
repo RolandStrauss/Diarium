@@ -16,19 +16,24 @@ suite('Report actions', () => {
 		await rm(directory, { recursive: true, force: true });
 	});
 
-	async function openTracker(action: string | undefined, openExternal: () => Promise<boolean> = async () => true) {
-		let openTimesheet: (() => Promise<void>) | undefined;
-		let receiveMessage: ((message: { type: string }) => Promise<void>) | undefined;
+	async function openTracker(action: string | undefined, openExternal: () => Promise<boolean> = async () => true,
+		options: { card?: boolean; cancelSave?: boolean; failSave?: boolean } = {}) {
+		const commands = new Map<string, () => Promise<void>>();
+		let receiveMessage: ((message: { type: string; format?: string }) => Promise<void>) | undefined;
+		let html = '';
 		const opened: { fsPath: string }[] = [];
 		const errors: string[] = [];
 		const information: string[] = [];
 		const messages: { type: string }[] = [];
 		let saveDialogs = 0;
+		const statusBarItems: { text: string; tooltip: string; command: string; show: () => void; dispose: () => void }[] = [];
 		const api = {
 			commands: {
-				registerCommand: (_id: string, callback: () => Promise<void>) => { openTimesheet = callback; },
+				registerCommand: (id: string, callback: () => Promise<void>) => { commands.set(id, callback); },
+				executeCommand: async (id: string) => commands.get(id)?.(),
 			},
 			ViewColumn: { One: 1 },
+			StatusBarAlignment: { Right: 2 },
 			Uri: {
 				file: (fsPath: string) => ({ fsPath }),
 				joinPath: (base: { fsPath: string }, name: string) => ({ fsPath: path.join(base.fsPath, name) }),
@@ -41,23 +46,32 @@ suite('Report actions', () => {
 				},
 			},
 			window: {
-				state: { focused: false },
-				activeTextEditor: undefined,
-				createWebviewPanel: () => ({
-					webview: {
-						cspSource: 'test',
-						postMessage: async (message: { type: string }) => { messages.push(message); return true; },
-						onDidReceiveMessage: (callback: typeof receiveMessage) => { receiveMessage = callback; },
-					},
-					onDidDispose: () => ({ dispose: () => {} }),
-					dispose: () => {},
-				}),
+				state: { focused: true },
+				activeTextEditor: { document: { uri: { scheme: 'file', fsPath: 'C:\\work\\first.ts' } } },
+				createStatusBarItem: () => {
+					const item = { text: '', tooltip: '', command: '', show: () => {}, dispose: () => {} };
+					statusBarItems.push(item);
+					return item;
+				},
+				createWebviewPanel: () => {
+					return {
+						webview: {
+							set html(value: string) { html = value; },
+							cspSource: 'test',
+							postMessage: async (message: { type: string }) => { messages.push(message); return true; },
+							onDidReceiveMessage: (callback: typeof receiveMessage) => { receiveMessage = callback; },
+						},
+						onDidDispose: () => ({ dispose: () => {} }),
+						dispose: () => {},
+					};
+				},
 				onDidChangeActiveTextEditor: () => ({ dispose: () => {} }),
 				onDidChangeWindowState: () => ({ dispose: () => {} }),
 				showQuickPick: async () => action ? { value: action } : undefined,
 				showSaveDialog: async () => {
 					saveDialogs++;
-					return { fsPath: path.join(directory, 'saved-report.pdf') };
+					return options.cancelSave ? undefined : { fsPath: path.join(directory,
+						options.failSave ? 'missing\\saved-report.pdf' : 'saved-report.pdf') };
 				},
 				showErrorMessage: async (message: string) => { errors.push(message); },
 				showInformationMessage: async (message: string) => { information.push(message); },
@@ -65,7 +79,12 @@ suite('Report actions', () => {
 		};
 		const context = {
 			globalStorageUri: { fsPath: directory },
-			globalState: { get: () => undefined, update: async () => {} },
+			globalState: {
+				get: (key: string) => key === 'time-tracker.file-times'
+					? { 'C:\\work\\first.ts': 3_600_000, 'C:\\work\\second.ts': 1_800_000 }
+					: undefined,
+				update: async () => {},
+			},
 			subscriptions: [],
 		};
 		const filename = path.join(__dirname, '..', 'extension.js');
@@ -80,12 +99,24 @@ suite('Report actions', () => {
 			clearInterval: () => {},
 		}, { filename });
 		module.exports.activate(context);
-		assert.ok(openTimesheet);
-		await openTimesheet();
+		const openCommand = commands.get(options.card ? 'time-tracker.openTimeCard' : 'time-tracker.openTimesheet');
+		assert.ok(openCommand);
+		await openCommand();
 		assert.ok(receiveMessage);
 		await receiveMessage({ type: 'requestReportAction' });
-		return { opened, errors, information, messages, saveDialogs, receiveMessage };
+		return { opened, errors, information, messages, saveDialogs, receiveMessage, statusBarItems,
+			getHtml: () => html, getReceiver: () => receiveMessage! };
 	}
+
+	test('status bar shows total and active-file time and targets open command', async () => {
+		const result = await openTracker(undefined);
+		const [statusBarItem] = result.statusBarItems;
+		assert.ok(statusBarItem);
+		assert.strictEqual(statusBarItem.text, '$(watch) 1h 30m | 1h 00m');
+		assert.match(statusBarItem.tooltip, /Total tracked: 1h 30m/);
+		assert.match(statusBarItem.tooltip, /Current file \(first\.ts\): 1h 00m/);
+		assert.strictEqual(statusBarItem.command, 'time-tracker.openTimesheet');
+	});
 
 	test('Print opens a generated PDF outside the webview without a Save dialog', async () => {
 		const result = await openTracker('print');
@@ -135,6 +166,53 @@ suite('Report actions', () => {
 		assert.deepStrictEqual(result.opened, []);
 		assert.strictEqual(result.saveDialogs, 0);
 		assert.deepStrictEqual(result.errors, []);
+		assert.deepStrictEqual(result.information, []);
+	});
+
+	test('opens the card from File activity and exports standalone HTML from the preview', async () => {
+		const result = await openTracker(undefined);
+		await result.receiveMessage({ type: 'openTimeCard' });
+		assert.match(result.getHtml(), /Time well spent/);
+		assert.match(result.getHtml(), /1h 30m/);
+		await result.getReceiver()({ type: 'export', format: 'html' });
+		const html = await readFile(path.join(directory, 'saved-report.pdf.html'), 'utf8');
+		assert.match(html, /first\.ts/);
+		assert.match(html, /second\.ts/);
+		assert.ok(!html.includes('C:\\work'));
+		assert.ok(!html.includes('<script'));
+		assert.deepStrictEqual(result.errors, []);
+	});
+
+	test('exports card PDF without changing the existing report action', async () => {
+		const result = await openTracker(undefined, undefined, { card: true });
+		await result.receiveMessage({ type: 'export', format: 'pdf' });
+		const pdf = await readFile(path.join(directory, 'saved-report.pdf'));
+		assert.strictEqual(pdf.subarray(0, 5).toString(), '%PDF-');
+		assert.deepStrictEqual(result.errors, []);
+		assert.ok(result.information.some(message => /Time card saved/.test(message)));
+	});
+
+	test('refreshes snapshots and reports invalid export formats', async () => {
+		const result = await openTracker(undefined, undefined, { card: true });
+		await result.receiveMessage({ type: 'refresh' });
+		assert.match(result.getHtml(), /first\.ts/);
+		await result.receiveMessage({ type: 'export', format: 'exe' });
+		assert.match(result.errors[0], /Choose HTML or PDF/);
+		assert.deepStrictEqual(result.information, []);
+	});
+
+	test('cancelling card save does not write a file or claim success', async () => {
+		const result = await openTracker(undefined, undefined, { card: true, cancelSave: true });
+		await result.receiveMessage({ type: 'export', format: 'html' });
+		await assert.rejects(readFile(path.join(directory, 'saved-report.pdf.html')), { code: 'ENOENT' });
+		assert.deepStrictEqual(result.errors, []);
+		assert.deepStrictEqual(result.information, []);
+	});
+
+	test('card write failures show an error without claiming success', async () => {
+		const result = await openTracker(undefined, undefined, { card: true, failSave: true });
+		await result.receiveMessage({ type: 'export', format: 'html' });
+		assert.match(result.errors[0], /Could not generate or export the time card/);
 		assert.deepStrictEqual(result.information, []);
 	});
 });

@@ -132,7 +132,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 </table></div>
 </section>
 <section id="file-times-view" class="view" role="tabpanel" aria-labelledby="file-times-tab" hidden>
-<div class="toolbar"><div><h2>Automatic file tracking</h2><p class="subtle">Time accumulates while VS Code is focused and a local file is active, including idle periods. Totals stay separate from timesheet reports.</p></div></div>
+<div class="toolbar"><div><h2>Automatic file tracking</h2><p class="subtle">Time accumulates while VS Code is focused and a local file is active, including idle periods. Totals stay separate from timesheet reports.</p></div><button id="time-card-button" class="primary" type="button">Preview time card</button></div>
 <div class="totals" aria-live="polite">
 <div class="metric"><strong id="tracked-total">0h 00m</strong><span>tracked time</span></div>
 <div class="metric"><strong id="tracked-file-count">0</strong><span>files tracked</span></div>
@@ -284,6 +284,7 @@ byId('add-form').addEventListener('submit', (event) => { event.preventDefault();
 byId('period-start').addEventListener('change', () => { setError('report-error', ''); vscode.postMessage({ type: 'setPeriodStart', value: byId('period-start').value }); });
 byId('hourly-rate').addEventListener('change', () => { const value = byId('hourly-rate').value; vscode.postMessage({ type: 'setHourlyRate', value }); });
 byId('print-button').addEventListener('click', () => vscode.postMessage({ type: 'requestReportAction' }));
+byId('time-card-button').addEventListener('click', () => vscode.postMessage({ type: 'openTimeCard' }));
 window.addEventListener('message', (event) => {
  const message = event.data;
  if (message.type === 'state') { data = message.data; renderYearSelect(); byId('hourly-rate').value = data.hourlyRate === null ? '' : String(data.hourlyRate); render(); }

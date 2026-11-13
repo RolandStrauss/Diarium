@@ -2,7 +2,7 @@
   "name": "time-tracker",
   "displayName": "Time Tracker",
   "description": "Record work time and export local timesheet reports.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "vscode": "^1.140.0"
   },
@@ -19,6 +19,10 @@
       {
         "command": "time-tracker.openTimesheet",
         "title": "Time Tracker: Open Timesheet"
+      },
+      {
+        "command": "time-tracker.openTimeCard",
+        "title": "Time Tracker: Preview Time Card"
       }
     ]
   },
@@ -30,7 +34,7 @@
     "pretest": "npm run compile && npm run bundle && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
-    "package:optimized": "vsce package --allow-missing-repository --skip-license"
+    "package:optimized": "vsce package --allow-missing-repository"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

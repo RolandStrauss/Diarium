@@ -5,9 +5,11 @@ import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
-import { customPeriodEnd, isValidDate, validateEntry, type TimeEntry } from './timeData';
+import { customPeriodEnd, formatDuration, isValidDate, validateEntry, type TimeEntry } from './timeData';
 import { renderReportPdf } from './pdfReport';
 import { FileTimeTracker } from './fileTimeTracker';
+import { randomBytes } from 'node:crypto';
+import { createTimeCard, renderTimeCardHtml, renderTimeCardPdf, type TimeCard } from './timeCard';
 
 const STORAGE_KEY = 'time-tracker.data';
 const STORAGE_FILE = 'timesheet.json';
@@ -70,12 +72,33 @@ async function readState(context: vscode.ExtensionContext): Promise<TrackerState
 	return migratedState;
 }
 
+async function saveDocument(filename: string, format: 'html' | 'pdf', render: () => Promise<Buffer> | Buffer): Promise<string | undefined> {
+	const baseDirectory = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(homedir());
+	const destination = await vscode.window.showSaveDialog({
+		defaultUri: vscode.Uri.joinPath(baseDirectory, filename),
+		filters: { [format === 'html' ? 'HTML documents' : 'PDF documents']: [format] },
+		saveLabel: `Save ${format.toUpperCase()}`,
+	});
+	if (!destination) {
+		return undefined;
+	}
+	const filePath = path.extname(destination.fsPath).toLowerCase() === `.${format}`
+		? destination.fsPath : `${destination.fsPath}.${format}`;
+	await writeFile(filePath, await render());
+	return filePath;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
 	fileTimeTracker = new FileTimeTracker(
 		context.globalState.get<unknown>(FILE_TIMES_STORAGE_KEY),
 		async fileTimes => context.globalState.update(FILE_TIMES_STORAGE_KEY, fileTimes),
 	);
 	const fileTimePanels = new Set<vscode.WebviewPanel>();
+	const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	statusBarItem.command = 'time-tracker.openTimesheet';
+	statusBarItem.text = '$(watch) 0h 00m | 0h 00m';
+	statusBarItem.tooltip = 'Total tracked: 0h 00m\nCurrent file: 0h 00m\nClick to open Time Tracker';
+	statusBarItem.show();
 	const showFileTimePersistenceError = (error: unknown): void => {
 		const reason = error instanceof Error ? error.message : String(error);
 		void vscode.window.showErrorMessage(`Could not save automatic file time data: ${reason}`);
@@ -85,6 +108,17 @@ export function activate(context: vscode.ExtensionContext): void {
 		if (!snapshot) {
 			return;
 		}
+		const totalTime = formatDuration(Math.floor(
+			Object.values(snapshot.fileTimes).reduce((total, milliseconds) => total + milliseconds, 0) / 60_000,
+		));
+		const currentTime = formatDuration(Math.floor(
+			(snapshot.activeFile ? snapshot.fileTimes[snapshot.activeFile] ?? 0 : 0) / 60_000,
+		));
+		const currentFileLabel = snapshot.activeFile
+			? `Current file (${path.basename(snapshot.activeFile)})`
+			: 'Current file';
+		statusBarItem.text = `$(watch) ${totalTime} | ${currentTime}`;
+		statusBarItem.tooltip = `Total tracked: ${totalTime}\n${currentFileLabel}: ${currentTime}\nClick to open Time Tracker`;
 		for (const panel of fileTimePanels) {
 			void panel.webview.postMessage({ type: 'fileTimes', data: snapshot });
 		}
@@ -109,6 +143,51 @@ export function activate(context: vscode.ExtensionContext): void {
 			postFileTimes();
 		});
 	}, 60_000);
+
+	const openTimeCard = vscode.commands.registerCommand('time-tracker.openTimeCard', () => {
+		let card: TimeCard;
+		try {
+			card = createTimeCard(fileTimeTracker?.snapshot().fileTimes ?? {});
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			void vscode.window.showErrorMessage(`Could not generate the time card: ${reason}`);
+			return;
+		}
+		const panel = vscode.window.createWebviewPanel(
+			'timeTrackerCard',
+			'Time Card Preview',
+			vscode.ViewColumn.One,
+			{ enableScripts: true, localResourceRoots: [] },
+		);
+		const renderCard = (): void => {
+			panel.webview.html = renderTimeCardHtml(card, { nonce: randomBytes(16).toString('hex') });
+		};
+		renderCard();
+		const listener = panel.webview.onDidReceiveMessage(async (message: { type?: string; format?: string }) => {
+			try {
+				if (message.type === 'refresh') {
+					card = createTimeCard(fileTimeTracker?.snapshot().fileTimes ?? {});
+					renderCard();
+				} else if (message.type === 'export') {
+					if (message.format !== 'html' && message.format !== 'pdf') {
+						throw new Error('Choose HTML or PDF for the time card export.');
+					}
+					const format = message.format;
+					const snapshot = card;
+					const filename = `time-card-${snapshot.generatedAt.slice(0, 10)}.${format}`;
+					const filePath = await saveDocument(filename, format, () => format === 'html'
+						? Buffer.from(renderTimeCardHtml(snapshot), 'utf8') : renderTimeCardPdf(snapshot));
+					if (filePath) {
+						void vscode.window.showInformationMessage(`Time card saved to ${filePath}`);
+					}
+				}
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				void vscode.window.showErrorMessage(`Could not generate or export the time card: ${reason}`);
+			}
+		});
+		panel.onDidDispose(() => listener.dispose());
+	});
 
 	const disposable = vscode.commands.registerCommand('time-tracker.openTimesheet', async () => {
 		const panel = vscode.window.createWebviewPanel(
@@ -164,6 +243,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
 		panel.webview.onDidReceiveMessage(async (message: { type: string; entry?: TimeEntry; date?: string; value?: string; view?: 'entries' | 'report' }) => {
 			switch (message.type) {
+				case 'openTimeCard':
+					await vscode.commands.executeCommand('time-tracker.openTimeCard');
+					break;
 				case 'ready':
 					postState('state');
 					break;
@@ -239,22 +321,11 @@ export function activate(context: vscode.ExtensionContext): void {
 					}
 					if (action?.value === 'pdf') {
 						const filename = `timesheet-${state.periodStart}-to-${customPeriodEnd(state.periodStart)}.pdf`;
-						const baseDirectory = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(homedir());
-						const destination = await vscode.window.showSaveDialog({
-							defaultUri: vscode.Uri.joinPath(baseDirectory, filename),
-							filters: { 'PDF documents': ['pdf'] },
-							saveLabel: 'Save PDF',
-						});
-						if (!destination) {
-							break;
-						}
 						try {
-							const pdf = await renderReportPdf(state);
-							const filePath = path.extname(destination.fsPath).toLowerCase() === '.pdf'
-								? destination.fsPath
-								: `${destination.fsPath}.pdf`;
-							await writeFile(filePath, pdf);
-							void vscode.window.showInformationMessage(`PDF saved to ${filePath}`);
+							const filePath = await saveDocument(filename, 'pdf', () => renderReportPdf(state));
+							if (filePath) {
+								void vscode.window.showInformationMessage(`PDF saved to ${filePath}`);
+							}
 						} catch (error) {
 							const reason = error instanceof Error ? error.message : String(error);
 							void vscode.window.showErrorMessage(`Could not save the PDF: ${reason}`);
@@ -268,6 +339,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	context.subscriptions.push(
 		disposable,
+		openTimeCard,
+		statusBarItem,
 		activeEditorListener,
 		windowStateListener,
 		{ dispose: () => clearInterval(fileTimeInterval) },
