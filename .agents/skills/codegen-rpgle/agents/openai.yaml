@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codegen RPGLE"
+  short_description: "Generate fully free-format RPGLE/SQLRPGLE/RPGLEINC"

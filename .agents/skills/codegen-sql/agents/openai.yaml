@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codegen SQL"
+  short_description: "Generate IBM i SQL members for scripts, tables, views, procedures, triggers, and indexes"

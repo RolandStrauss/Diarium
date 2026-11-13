@@ -1,0 +1,42 @@
+/* <Metadata> */
+/* Source Name .........: BUILD_TPLUTIL */
+/* Created By ...........: R. Strauss */
+/* Date Created .........: 2026-08-28 */
+/* Source Description ..: CLLE build recipe scaffold for service program artifacts. */
+/* Jira ..................: N/A */
+/* </Metadata> */
+/* */
+/* <Synopsis> */
+/* Builds the service module, service program, binding directory entry, and */
+/* consumer program for TPLUTIL using the supplied library/bnddir values. */
+/* </Synopsis> */
+/* */
+/* <Revision History> */
+/* Revisioner | Date | Jira No (if known) | Change | */
+/* R. Strauss | 2026-08-28 | N/A | Initial scaffold | */
+/* </Revision History> */
+/* */
+/* Assumptions: */
+/* - Module source member:   TPLUTIL (QRPGLESRC) */
+/* - Binder source member:   TPLUTIL (QSRVSRC) */
+/* - Consumer source member: TPLUTILC (QRPGLESRC) */
+/* - Library qualifier:      *CURLIB */
+/* - Binding directory:      TPLBNDDIR */
+
+/* 1) Compile service module */
+CRTRPGMOD MODULE(*CURLIB/TPLUTIL) SRCFILE(*CURLIB/QRPGLESRC) SRCMBR(TPLUTIL)
+
+/* 2) Create/replace service program using binder source */
+CRTSRVPGM SRVPGM(*CURLIB/TPLUTIL) MODULE(*CURLIB/TPLUTIL) +
+          EXPORT(*SRCFILE) SRCFILE(*CURLIB/QSRVSRC) SRCMBR(TPLUTIL) +
+          ACTGRP(*CALLER)
+
+/* 3) Optional: add service program to binding directory */
+ADDBNDDIRE BNDDIR(*CURLIB/TPLBNDDIR) OBJ((*LIBL/TPLUTIL *SRVPGM))
+
+/* 4) Compile consumer module/program */
+CRTRPGMOD MODULE(*CURLIB/TPLUTILC) SRCFILE(*CURLIB/QRPGLESRC) SRCMBR(TPLUTILC)
+CRTPGM    PGM(*CURLIB/TPLUTILC) MODULE(*CURLIB/TPLUTILC) BNDDIR(*CURLIB/TPLBNDDIR)
+
+/* 5) Verify exports/signatures when needed */
+DSPSRVPGM SRVPGM(*CURLIB/TPLUTIL) DETAIL(*PROCEXP)

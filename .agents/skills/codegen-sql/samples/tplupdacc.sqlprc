@@ -1,0 +1,58 @@
+-- <Metadata>
+-- Source Name .........: TPLUPDACC
+-- Created By ...........: R. Strauss
+-- Date Created .........: 2026-08-28
+-- Source Description ..: SQL procedure scaffold with update and found-status flow.
+-- Jira ..................: N/A
+-- </Metadata>
+--
+-- <Synopsis>
+-- Validates row existence, conditionally updates the base table, and returns found status.
+-- </Synopsis>
+--
+-- <Revision History>
+-- Revisioner | Date | Jira No (if known) | Change |
+-- R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+-- </Revision History>
+
+create or replace procedure TPLUPDACC (
+  in P_ID dec(10, 0),
+  in P_CODE char(20),
+  out P_FOUND smallint
+) language sql specific TPLUPDACC modifies sql data begin
+declare V_EXISTS smallint default 0;
+
+
+select
+  case
+    when count(*) > 0 then 1
+    else 0
+  end
+into
+  V_EXISTS
+from
+  TPLACCMST
+where
+  ID = P_ID;
+
+
+if V_EXISTS = 1 then
+update TPLACCMST
+set
+  CODE = P_CODE,
+  UPDATED_AT = current timestamp
+where
+  ID = P_ID;
+
+
+end if;
+
+
+set
+  P_FOUND = V_EXISTS;
+
+
+end;
+
+
+stop;

@@ -1,5 +1,17 @@
-out
-dist
-node_modules
-.vscode-test/
-*.vsix
+# Added by code-review-graph
+.code-review-graph/*
+!.code-review-graph/languages.toml
+
+# Python local virtual environments
+.venv/
+
+# Auto-generated graphify artifacts (local-only)
+graphify-out/
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

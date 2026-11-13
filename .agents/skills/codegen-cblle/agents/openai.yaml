@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codegen-CBLLE"
+  short_description: "Generate IBM i COBOL members for CBLLE, SQLCBLLE, and CPY"

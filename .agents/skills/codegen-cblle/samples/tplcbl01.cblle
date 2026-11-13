@@ -1,0 +1,40 @@
+      *> <Metadata>
+      *> Source Name .........: TPLCBL01
+      *> Created By ...........: R. Strauss
+      *> Date Created .........: 2026-08-18
+      *> Source Description ..: ILE COBOL scaffold for IBM i program flow.
+      *> Jira ..................: N/A
+      *> </Metadata>
+      *>
+      *> <Synopsis>
+      *> Minimal CBLLE scaffold with deterministic entry and return behavior.
+      *> </Synopsis>
+      *>
+      *> <Revision History>
+      *> Revisioner | Date | Jira No (if known) | Change |
+      *> R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+      *> </Revision History>
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. TPLCBL01.
+
+       ENVIRONMENT DIVISION.
+       CONFIGURATION SECTION.
+       SOURCE-COMPUTER. IBM-I.
+       OBJECT-COMPUTER. IBM-I.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  WS-RETURN-CODE            PIC S9(5) COMP-5 VALUE 0.
+       01  WS-MESSAGE                PIC X(64) VALUE SPACES.
+
+       PROCEDURE DIVISION.
+           PERFORM INITIALIZE-LEG
+           MOVE 'TPLCBL01 started' TO WS-MESSAGE
+           DISPLAY WS-MESSAGE
+           GOBACK.
+
+       INITIALIZE-LEG.
+           MOVE 0 TO WS-RETURN-CODE.
+
+       END PROGRAM TPLCBL01.

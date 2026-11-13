@@ -1,0 +1,30 @@
+-- <Metadata>
+-- Source Name .........: TPLACCTRG
+-- Created By ...........: R. Strauss
+-- Date Created .........: 2026-08-28
+-- Source Description ..: SQL trigger scaffold for timestamp maintenance.
+-- Jira ..................: N/A
+-- </Metadata>
+--
+-- <Synopsis>
+-- Updates a changed-row timestamp when the inbound value has not changed.
+-- </Synopsis>
+--
+-- <Revision History>
+-- Revisioner | Date | Jira No (if known) | Change |
+-- R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+-- </Revision History>
+
+create or replace trigger TPLACCTRG before
+update on TPLACCMST referencing new as N old as O for each row mode db2sql begin atomic if N.UPDATED_AT = O.UPDATED_AT then
+set
+  N.UPDATED_AT = current timestamp;
+
+
+end if;
+
+
+end;
+
+
+stop;

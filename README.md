@@ -20,3 +20,6 @@ The initial reporting period starts on 21 October 2026. Its end date is calculat
 - `npm run lint` checks the source.
 - `npm test` runs the VS Code extension tests against the bundled extension; the test runner downloads a VS Code instance when one is not already available.
 - `npm run package:optimized` builds a VSIX with the PDF runtime dependencies included.
+
+
+Made with ❤️ for better productivity

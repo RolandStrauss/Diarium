@@ -1,0 +1,33 @@
+@startuml
+' Jackson-derived flowchart template
+' Replace placeholders while preserving sequence/selection/iteration shape.
+
+start
+
+:Initialize Context;
+:Read Initial Input;
+
+if (Is Input Valid?) then (yes)
+  :Prepare Processing State;
+else (no)
+  :Handle Validation Failure;
+  stop
+endif
+
+while (More Items?) is (yes)
+  :Process Current Item;
+
+  if (Special Condition?) then (yes)
+    :Apply Branch A;
+  else (no)
+    :Apply Branch B;
+  endif
+
+  :Advance To Next Item;
+endwhile (no)
+
+:Emit Output;
+:Finalize;
+
+stop
+@enduml

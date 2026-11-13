@@ -1,0 +1,12 @@
+     A                                      DSPSIZ(24 80 *DS3)
+     A                                      PRINT
+     A          R TPLDSP01R
+     A                                  2 20'TPLDSP01 Display'
+     A                                  4  2'Customer:'
+     A            CUSTNO         7Y 0B  4 12EDTCDE(Z)
+     A                                  6  2'Name:'
+     A            CUSTNAM       30A  O  6 12
+     A                                  8  2'Status:'
+     A            STATUS        10A  O  8 12
+     A          CF03(03 'Exit')
+     A          CF05(05 'Refresh')

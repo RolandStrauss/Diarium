@@ -1,0 +1,101 @@
+/* <Metadata> */
+/* Source Name .........: TPLCL01 */
+/* Created By ...........: R. Strauss */
+/* Date Created .........: 2026-08-28 */
+/* Source Description ..: ILE CL scaffold for IBM i orchestration flow. */
+/* Jira ..................: N/A */
+/* </Metadata> */
+/* */
+/* <Synopsis> */
+/* Deterministic CLLE scaffold with initialize, input, process, output flow. */
+/* </Synopsis> */
+/* */
+/* <Revision History> */
+/* Revisioner | Date | Jira No (if known) | Change | */
+/* R. Strauss | 2026-08-28 | N/A | Initial scaffold | */
+/* </Revision History> */
+
+PGM PARM(&REQUEST &RC)
+
+        DCL VAR(&REQUEST) TYPE(*CHAR) LEN(256)
+        DCL VAR(&RC) TYPE(*INT) VALUE(0)
+        DCL VAR(&WORKUINT) TYPE(*UINT) VALUE(0)
+        DCL VAR(&JOBUSER) TYPE(*CHAR) LEN(10)
+        DCL VAR(&SUBVAL) TYPE(*CHAR) LEN(32) VALUE('')
+
+        DCL VAR(&CRASHED) TYPE(*LGL) VALUE('0')
+        DCL VAR(&MSG) TYPE(*CHAR) LEN(500) VALUE('')
+        DCL VAR(&PGMNAME) TYPE(*CHAR) LEN(10) VALUE('TPLCL01')
+        DCL VAR(&MSGID) TYPE(*CHAR) LEN(7)
+        DCL VAR(&MSGDTA) TYPE(*CHAR) LEN(256)
+        DCL VAR(&MSGFIL) TYPE(*CHAR) LEN(10)
+        DCL VAR(&MSGFLIB) TYPE(*CHAR) LEN(10)
+        DCL VAR(&RTNTYPE) TYPE(*CHAR) LEN(2)
+
+        MONMSG MSGID(CPF0000) EXEC(DO)
+          CHGVAR VAR(&MSG) VALUE('Unhandled CPF0000 in TPLCL01')
+          CALLSUBR SUBR(CRASH)
+        ENDDO
+
+/* Initialise */
+        CHGVAR VAR(&RC) VALUE(0)
+        CHGVAR VAR(&REQUEST) VALUE(%TRIM(&REQUEST))
+
+/* Input */
+        IF COND(%PARMS *LT 1) THEN(DO)
+          CHGVAR VAR(&MSG) VALUE('REQUEST parameter is required.')
+        ENDDO
+        IF COND(%LEN(&REQUEST) *EQ 0) THEN(DO)
+          CHGVAR VAR(&MSG) VALUE('REQUEST cannot be blank.')
+        ENDDO
+
+/* Process */
+        IF COND(%TRIM(&MSG) *EQ '') THEN(DO)
+          RTVJOBA USER(&JOBUSER)
+          CHGVAR VAR(&SUBVAL) VALUE(%SST(&REQUEST 1 32))
+          CHGVAR VAR(&WORKUINT) VALUE(%UINT(%LEN(%TRIM(&SUBVAL))))
+
+          IF COND(%SCAN('FAIL' &REQUEST) *GT 0) THEN(DO)
+            CHGVAR VAR(&MSG) VALUE('Request contains FAIL marker.')
+          ENDDO
+        ENDDO
+
+/* Output */
+        IF COND(%TRIM(&MSG) *EQ '') THEN(DO)
+          SNDPGMMSG MSGID(CPF9898) MSGF(QCPFMSG) +
+            MSGDTA('TPLCL01 completed for' *BCAT %TRIM(&JOBUSER)) +
+            TOPGMQ(*PRV) MSGTYPE(*INFO)
+          RETURN
+        ENDDO
+
+        CALLSUBR SUBR(CRASH)
+        RETURN
+
+/* ---------------------------------------------------------------------------------------------- */
+/* CRASH : Routine to handle unexpected errors                                                    */
+/* ---------------------------------------------------------------------------------------------- */
+        SUBR SUBR(CRASH)
+          IF COND(&CRASHED) THEN(RETURN)
+          CHGVAR VAR(&CRASHED) VALUE('1')
+
+/* This subroutine reads backwards through joblog status returned by RCVMSG. */
+          RCVMSG MSGTYPE(*LAST) MSGDTA(&MSGDTA) MSGID(&MSGID) RTNTYPE(&RTNTYPE) +
+            MSGF(&MSGFIL) SNDMSGFLIB(&MSGFLIB)
+
+          IF COND(&RTNTYPE *EQ '15' *OR &RTNTYPE *EQ '17') THEN(DO)
+            SNDPGMMSG MSGID(&MSGID) MSGF(&MSGFIL) MSGDTA(&MSGDTA) MSGTYPE(*DIAG)
+          ENDDO
+
+          IF COND(%TRIM(&MSG) *NE '') THEN(DO)
+            SNDPGMMSG MSGID(CPF9898) MSGF(QCPFMSG) MSGDTA(%TRIM(&MSG)) MSGTYPE(*DIAG)
+          ENDDO
+
+          IF COND(%TRIM(&MSG) *EQ '') THEN(DO)
+            SNDPGMMSG MSGID(CPF9898) MSGF(QCPFMSG) MSGDTA(%TRIM(&MSGDTA)) MSGTYPE(*DIAG)
+          ENDDO
+
+          SNDPGMMSG MSGID(CPF9898) MSGF(QCPFMSG) MSGDTA('* Program' *BCAT &PGMNAME +
+            *BCAT 'ended abnormally') MSGTYPE(*ESCAPE)
+        ENDSUBR
+
+ENDPGM

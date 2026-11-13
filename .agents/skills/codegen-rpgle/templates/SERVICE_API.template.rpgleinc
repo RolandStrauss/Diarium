@@ -1,0 +1,23 @@
+**free
+// <Metadata>
+// Source Name .........: SERVICE_API_INCLUDE_MEMBER
+// Created By ...........: R. Strauss
+// Date Created .........: 2026-08-28
+// Source Description ..: Public RPGLE include scaffold for service prototypes.
+// Jira ..................: N/A
+// </Metadata>
+//
+// <Synopsis>
+// Declares exported service-program procedures for consumer members.
+// </Synopsis>
+//
+// <Revision History>
+// Revisioner | Date | Jira No (if known) | Change |
+// R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+// </Revision History>
+
+// Service program public API prototypes
+
+dcl-pr SERVICE_PROC varchar(256);
+  p_inValue varchar(256) const;
+end-pr;

@@ -1,0 +1,27 @@
+      A* <Metadata>
+      A* Source Name .........: MEMBER_NAME
+      A* Created By ...........: R. Strauss
+      A* Date Created .........: 2026-08-28
+      A* Source Description ..: Printer file scaffold for IBM i report output.
+      A* Jira ..................: N/A
+      A* </Metadata>
+      A*
+      A* <Synopsis>
+      A* Minimal PRTF with report title, date, and customer output columns.
+      A* </Synopsis>
+      A*
+      A* <Revision History>
+      A* Revisioner | Date | Jira No (if known) | Change |
+      A* R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+      A* </Revision History>
+      A                                      PRINT
+      A          R RECORD_NAME
+      A                                      SKIPA(001)
+      A            RPTTITLE      40A  O  1 10
+      A                                      ALIAS(REPORT_TITLE)
+      A            RPTDATE       10A  O  1 60
+      A                                      ALIAS(REPORT_DATE)
+      A            CUSTNO         7Y 0O  3  5EDTCDE(Z)
+      A                                      ALIAS(CUSTOMER_NUMBER)
+      A            CUSTNAM       30A  O  3 15
+      A                                      ALIAS(CUSTOMER_NAME)

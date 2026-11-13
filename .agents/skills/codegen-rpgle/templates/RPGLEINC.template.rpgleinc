@@ -1,0 +1,37 @@
+**free
+// <Metadata>
+// Source Name .........: MEMBER_NAME
+// Created By ...........: R. Strauss
+// Date Created .........: 2026-08-28
+// Source Description ..: RPGLE include scaffold for shared declarations.
+// Jira ..................: N/A
+// </Metadata>
+//
+// <Synopsis>
+// Shared constants, templates, and prototypes for reuse across members.
+// </Synopsis>
+//
+// <Revision History>
+// Revisioner | Date | Jira No (if known) | Change |
+// R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+// </Revision History>
+
+// Shared constants
+
+dcl-c APP_NAME const('MYAPP');
+dcl-c MAX_ROWS const(9999);
+dcl-c SQLSTATE_OK const('00000');
+dcl-c SQLSTATE_NO_DATA const('02000');
+
+// Shared DS template
+
+dcl-ds ApiError_t qualified template;
+  code char(7);
+  message varchar(512);
+end-ds;
+
+// Shared prototype
+
+dcl-pr normalizeName varchar(128);
+  p_inputValue varchar(256) const;
+end-pr;

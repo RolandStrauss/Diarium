@@ -1,0 +1,30 @@
+-- <Metadata>
+-- Source Name .........: OBJECT_NAME
+-- Created By ...........: R. Strauss
+-- Date Created .........: 2026-08-28
+-- Source Description ..: SQL view scaffold over a base table.
+-- Jira ..................: N/A
+-- </Metadata>
+--
+-- <Synopsis>
+-- Creates a minimal projection view for common identifier and status columns.
+-- </Synopsis>
+--
+-- <Revision History>
+-- Revisioner | Date | Jira No (if known) | Change |
+-- R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+-- </Revision History>
+create or replace view
+  OBJECT_NAME as
+select
+  ID,
+  CODE,
+  DESCRIPTION,
+  RECORD_STATUS,
+  CREATED_AT,
+  UPDATED_AT
+from
+  BASE_TABLE_NAME;
+
+
+stop;

@@ -1,0 +1,62 @@
+      *> <Metadata>
+      *> Source Name .........: TPLSQLC1
+      *> Created By ...........: R. Strauss
+      *> Date Created .........: 2026-08-18
+      *> Source Description ..: SQL COBOL scaffold for IBM i with SQLSTATE handling.
+      *> Jira ..................: N/A
+      *> </Metadata>
+      *>
+      *> <Synopsis>
+      *> Reads one row via embedded SQL and handles success/no-data/error states.
+      *> </Synopsis>
+      *>
+      *> <Revision History>
+      *> Revisioner | Date | Jira No (if known) | Change |
+      *> R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+      *> </Revision History>
+
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. TPLSQLC1.
+
+       ENVIRONMENT DIVISION.
+       CONFIGURATION SECTION.
+       SOURCE-COMPUTER. IBM-I.
+       OBJECT-COMPUTER. IBM-I.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  WS-ID                     PIC S9(9) COMP-5 VALUE 0.
+       01  WS-NAME                   PIC X(50) VALUE SPACES.
+       01  WS-SQLSTATE               PIC X(5) VALUE SPACES.
+
+       EXEC SQL INCLUDE SQLCA END-EXEC.
+
+       PROCEDURE DIVISION.
+           PERFORM INITIALIZE-LEG
+           EXEC SQL
+              SELECT NAME
+                INTO :WS-NAME
+                FROM DDGMTRRUL
+               WHERE ID = :WS-ID
+               FETCH FIRST 1 ROW ONLY
+           END-EXEC
+
+           MOVE SQLSTATE TO WS-SQLSTATE
+
+           EVALUATE TRUE
+             WHEN WS-SQLSTATE = '00000'
+               DISPLAY 'Read successful.'
+             WHEN WS-SQLSTATE = '02000'
+               DISPLAY 'No row found.'
+             WHEN OTHER
+               DISPLAY 'SQL error. SQLSTATE=' WS-SQLSTATE
+           END-EVALUATE
+
+           GOBACK.
+
+       INITIALIZE-LEG.
+           MOVE 0 TO WS-ID
+           MOVE SPACES TO WS-NAME
+           MOVE SPACES TO WS-SQLSTATE.
+
+       END PROGRAM TPLSQLC1.

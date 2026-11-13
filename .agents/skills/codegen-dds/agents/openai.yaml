@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codegen DDS"
+  short_description: "Generate IBM i DDS members for PF and LF"

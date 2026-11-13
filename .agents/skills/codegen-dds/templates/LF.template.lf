@@ -1,0 +1,21 @@
+      A* <Metadata>
+      A* Source Name .........: MEMBER_NAME
+      A* Created By ...........: R. Strauss
+      A* Date Created .........: 2026-08-28
+      A* Source Description ..: Logical file scaffold for IBM i DDS keyed access.
+      A* Jira ..................: N/A
+      A* </Metadata>
+      A*
+      A* <Synopsis>
+      A* Minimal LF over a physical file with keyed view of core fields.
+      A* </Synopsis>
+      A*
+      A* <Revision History>
+      A* Revisioner | Date | Jira No (if known) | Change |
+      A* R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+      A* </Revision History>
+      A          R RECORD_NAME                  PFILE(PFILE_NAME)
+      A            ID
+      A            NAME
+      A            STATUS
+      A          K ID

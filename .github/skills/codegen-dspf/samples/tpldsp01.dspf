@@ -1,0 +1,40 @@
+     A* <Metadata>
+     A* Source Name .........: TPLDSP01
+     A* Created By ...........: R. Strauss
+     A* Date Created .........: 2026-08-28
+     A* Source Description ..: Display file scaffold for IBM i 5250 interaction.
+     A* Jira ..................: N/A
+     A* </Metadata>
+     A*
+     A* <Synopsis>
+     A* Minimal DSPF with one record format, aliases, and attribute fields.
+     A* </Synopsis>
+     A*
+     A* <Revision History>
+     A* Revisioner | Date | Jira No (if known) | Change |
+     A* R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+     A* </Revision History>
+     A                                      DSPSIZ(24 80 *DS3)
+     A                                      PRINT
+     A          R TPLDSP01R
+     A                                  2 20'TPLDSP01 Display'
+     A                                  4  2'Customer:'
+     A            CUSTNO         7Y 0B  4 12EDTCDE(Z)
+     A                                      ALIAS(CUSTOMER_NUMBER)
+     A                                      DSPATR(&CUSTNOA)
+     A                                  6  2'Name:'
+     A            CUSTNAM       30A  O  6 12
+     A                                      ALIAS(CUSTOMER_NAME)
+     A                                      DSPATR(&CUSTNAMA)
+     A                                  8  2'Status:'
+     A            STATUS        10A  O  8 12
+     A                                      ALIAS(CUSTOMER_STATUS)
+     A                                      DSPATR(&STATUSA)
+     A            CUSTNOA        1A  P
+     A                                      ALIAS(CUSTOMER_NUMBER_ATTR)
+     A            CUSTNAMA       1A  P
+     A                                      ALIAS(CUSTOMER_NAME_ATTR)
+     A            STATUSA        1A  P
+     A                                      ALIAS(CUSTOMER_STATUS_ATTR)
+     A          CF03(03 'Exit')
+     A          CF05(05 'Refresh')

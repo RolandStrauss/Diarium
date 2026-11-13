@@ -1,0 +1,224 @@
+     A                                      DSPSIZ(27 132 *DS4)
+     A                                      PRINT
+     A                                      INDARA
+     A                                      CSRINPONLY
+     A                                      CA03
+     A                                      CF04
+     A                                      CA05
+     A                                      CA06
+     A                                      CA07
+     A                                      CA12
+     A                                      CA21
+     A                                      HELP
+     A*_______________________________________________________________
+     A*___ Screen Header:  Fields begin with SH_
+     A          R SH_HDR
+     A                                      OVERLAY
+     A                                      TEXT('Screen Header')
+     A            SH_SCR        21A     1  2
+     A                                      ALIAS(SCREEN_TITLE)
+     A                                      DSPATR(&SH_SCRA)
+     A            SH_APPNAM     30      1 52
+     A                                      ALIAS(APPLICATION_NAME)
+     A                                      DSPATR(&SH_APPNAMA)
+     A                                  1124DATE
+     A                                      EDTCDE(Y)
+     A                                  2  2USER
+     A            SH_PNLNAM    100      2 17
+     A                                      ALIAS(PANEL_NAME)
+     A                                      DSPATR(&SH_PNLNAMA)
+     A                                  2124TIME
+     A            SH_SCRA        1A  P
+     A                                      ALIAS(SCREEN_ATTR)
+     A            SH_APPNAMA     1A  P
+     A                                      ALIAS(APP_NAME_ATTR)
+     A            SH_PNLNAMA     1A  P
+     A                                      ALIAS(PANEL_NAME_ATTR)
+     A*_______________________________________________________________
+     A*___ Subfile:  Fields begin with SF_
+     A          R SFL                       SFL
+     A                                      TEXT('SubFile')
+     A            SF_OPT         2Y 0B  8  2EDTCDE(Z)
+     A                                      ALIAS(OPTION_CODE)
+     A                                      DSPATR(&SF_OPTA)
+     A                                      CHECK(AB)
+     A                                      VALUES(2 4 5)
+     A            SF_LIBNAM     10A  O  8  6ALIAS(SCHEMA_NAME)
+     A                                      DSPATR(&SF_LIBNAMA)
+     A            SF_LIBDSC     50   O  8 17ALIAS(SCHEMA_DESCRIPTION)
+     A                                      DSPATR(&SF_LIBDSCA)
+     A            SCHSIZ        15  0   8 68ALIAS(SCHEMA_SIZE)
+     A                                      DSPATR(&SCHSIZA)
+     A                                      EDTCDE(2)
+     A            SD_NBROBJ     15  0   8 88ALIAS(NUMBER_OF_OBJECTS)
+     A                                      DSPATR(&SD_NBROBJA)
+     A                                      EDTCDE(2)
+     A            SF_COLDAT       L  O  8113ALIAS(COLLECTION_DATE)
+     A                                      DSPATR(&SF_COLDATA)
+     A            SF_OPTA         1A  P
+     A                                      ALIAS(OPTION_CODE_ATTR)
+     A            SF_LIBNAMA      1A  P
+     A                                      ALIAS(SCHEMA_NAME_ATTR)
+     A            SF_LIBDSCA      1A  P
+     A                                      ALIAS(SCHEMA_DESC_ATTR)
+     A            SCHSIZA         1A  P
+     A                                      ALIAS(SCHEMA_SIZE_ATTR)
+     A            SD_NBROBJA      1A  P
+     A                                      ALIAS(NUM_OBJECTS_ATTR)
+     A            SF_COLDATA      1A  P
+     A                                      ALIAS(COLLECTION_DATE_ATTR)
+     A*_______________________________________________________________
+     A*___ Subfile Control: Fields begin with SC_
+     A          R SFLCTL                    SFLCTL(SFL)
+     A                                      SFLSIZ(9999)
+     A                                      SFLPAG(0015)
+     A                                      TEXT('Subfile Control')
+     A                                      CA05
+     A                                      CA06
+     A                                      OVERLAY
+     A  31                                  SFLDSP
+     A  32                                  SFLDSPCTL
+     A N32                                  SFLCLR
+     A  32                                  SFLEND(*SCRBAR *MORE)
+     A            SC_OPTTXT    125      5  2
+     A                                      ALIAS(OPTIONS_TEXT)
+     A                                      DSPATR(&SC_OPTTXTA)
+     A                                  7  2'Opt'
+     A                                      DSPATR(UL)
+     A                                  7  6'Schema'
+     A                                      DSPATR(UL)
+     A                                  7 17'Description'
+     A                                      DSPATR(UL)
+     A                                  7 76'Schema Size'
+     A                                      DSPATR(UL)
+     A                                  7 90'Number of Objects'
+     A                                      DSPATR(UL)
+     A                                  7108'Last Collection'
+     A                                      DSPATR(UL)
+     A            SC_OPTTXTA     1A  P
+     A                                      ALIAS(OPTIONS_TEXT_ATTR)
+     A*_______________________________________________________________
+     A*___ Screen footer & function keys:  Fields begin with SFT_
+     A          R SF_KEY
+     A                                      TEXT('Screen Footer')
+     A                                      OVERLAY
+     A            SFT_BUT        2Y 0B 25  2PSHBTNFLD
+     A                                      ALIAS(FOOTER_BUTTON)
+     A                                      DSPATR(&SFT_BUTA)
+     A                                      CHCAVAIL((*COLOR BLU))
+     A                                      PSHBTNCHC(1 'Enter')
+     A                                      PSHBTNCHC(2 'F3=Exit' CA03)
+     A                                      PSHBTNCHC(3 'F10=Accept' CA10)
+     A                                      PSHBTNCHC(4 'F12=Cancel' CA12)
+     A            SFT_BUTA        1A  P
+     A                                      ALIAS(FOOTER_BUTTON_ATTR)
+     A*_______________________________________________________________
+     A*___ Data Details - Fields begin with SD_
+     A          R DETAILS
+     A                                      OVERLAY
+     A                                      TEXT('Detail Data')
+     A                                      CF04
+     A                                      CA10
+     A                                      RTNCSRLOC(&SD_PMT_RCD &SD_PMT_FLD)
+     A                                      CSRLOC(SD_LIN SD_COL)
+     A                                  4  2'First Name .............:'
+     A            SD_LIBNAM     10   B  4 28ALIAS(SCHEMA_NAME)
+     A                                      DSPATR(&SD_LIBNAMA)
+     A                                      DSPATR(PC)
+     A*                                      COLOR(WHT)
+     A                                  5  2'Last Name ..............:'
+     A            SD_LIBDSC     50   O  5 28ALIAS(SCHEMA_DESCRIPTION)
+     A                                      DSPATR(&SD_LIBDSCA)
+     A                                  6  2'Schema Size ............:'
+     A            SCHSIZ        15  0   6 28ALIAS(SCHEMA_SIZE)
+     A                                      DSPATR(&SCHSIZA)
+     A                                      EDTCDE(2)
+     A                                  7  2'Number Of Objects ......:'
+     A            SD_NBROBJ     15  0O  7 28ALIAS(NUMBER_OF_OBJECTS)
+     A                                      DSPATR(&SD_NBROBJA)
+     A                                      EDTCDE(2)
+     A                                  8  2'Date of collection .....:'
+     A            SD_COLDAT       L  O  8 28ALIAS(COLLECTION_DATE)
+     A                                      DSPATR(&SD_COLDATA)
+     A                                  9  2'Collection active? .....:'
+     A            SD_COLSTS      1   B  9 28ALIAS(COLLECTION_STATUS)
+     A                                      DSPATR(&SD_COLSTSA)
+     A                                  9 30'(A=Active ; I=Inactive)'
+     A                                      COLOR(BLU)
+     A            SD_LIBNAMA     1A  P
+     A                                      ALIAS(SCHEMA_NAME_ATTR)
+     A            SD_LIBDSCA     1A  P
+     A                                      ALIAS(SCHEMA_DESC_ATTR)
+     A            SCHSIZA        1A  P
+     A                                      ALIAS(SCHEMA_SIZE_ATTR)
+     A            SD_NBROBJA     1A  P
+     A                                      ALIAS(NUM_OBJECTS_ATTR)
+     A            SD_COLDATA     1A  P
+     A                                      ALIAS(COLLECTION_DATE_ATTR)
+     A            SD_COLSTSA     1A  P
+     A                                      ALIAS(COL_STATUS_ATTR)
+     A*
+     A            SD_PMT_RCD    10A  H
+     A                                      ALIAS(PROMPT_RECORD)
+     A            SD_PMT_FLD    10A  H
+     A                                      ALIAS(PROMPT_FIELD)
+     A            SD_CHGDTS       Z  H
+     A                                      ALIAS(CHANGED_TIMESTAMP)
+     A            SD_LIN         3S 0H
+     A                                      ALIAS(CURSOR_LINE)
+     A            SD_COL         3S 0H
+     A                                      ALIAS(CURSOR_COLUMN)
+     A*                                      COLOR(WHT)
+     A                                  6 48'(megaByte)'
+     A                                      COLOR(BLU)
+     A*========================================================================
+     A*=== Audit Details - Fields begin with SA_ ==============================
+     A          R AUDITS
+     A                                      OVERLAY
+     A                                      TEXT('Audit Data')
+     A            SA_AUDITS    130     23  2
+     A                                      ALIAS(AUDIT_SUMMARY)
+     A                                      DSPATR(&SA_AUDITSA)
+     A            SA_AUDITSA     1A  P
+     A                                      ALIAS(AUDIT_SUMMARY_ATTR)
+     A*========================================================================
+     A*________________________________________________________________________
+     A*___ Data Details - Fields begin with SD_
+     A          R SD_FKEY
+     A                                      TEXT('Detail Screen Footer')
+     A                                      OVERLAY
+     A            SD_BUT         2Y 0B 25  2PSHBTNFLD
+     A                                      ALIAS(DETAIL_BUTTON)
+     A                                      DSPATR(&SD_BUTA)
+     A                                      CHCAVAIL((*COLOR BLU))
+     A                                      PSHBTNCHC(1 'Enter')
+     A                                      PSHBTNCHC(2 'F3=Exit' CA03)
+     A                                      PSHBTNCHC(3 'F4=Prompt' CF04)
+     A                                      PSHBTNCHC(4 'F10=Accept' CA10)
+     A                                      PSHBTNCHC(5 'F12=Cancel' CA12)
+     A            SD_BUTA        1A  P
+     A                                      ALIAS(DETAIL_BUTTON_ATTR)
+     A*_______________________________________________________________
+     A*___ Message Subfile:  No fields
+     A          R MSGSFL                    SFL
+     A                                      SFLMSGRCD(27)
+     A            MSGKEY                    SFLMSGKEY
+     A                                      ALIAS(MESSAGE_KEY)
+     A            PGMNAME                   SFLPGMQ
+     A                                      ALIAS(PROGRAM_NAME)
+     A*_______________________________________________________________
+     A*___ Message Subfile Control: No fields
+     A          R MSGCTL                    SFLCTL(MSGSFL)
+     A                                      OVERLAY
+     A                                      SFLPAG(1)
+     A                                      SFLSIZ(10)
+     A                                      SFLDSP SFLDSPCTL
+     A N99                                  SFLEND(*PLUS)
+     A                                      SFLINZ
+     A            PGMNAME                   SFLPGMQ
+     A                                      ALIAS(PROGRAM_NAME)
+     A*_______________________________________________________________
+     A*___ Dummy Record
+     A*         R DUMMY
+      *                                     ASSUME
+     A*                                27 79'*'

@@ -1,0 +1,23 @@
+-- <Metadata>
+-- Source Name .........: TPLACCIDX
+-- Created By ...........: R. Strauss
+-- Date Created .........: 2026-08-28
+-- Source Description ..: SQL index scaffold for base-table access paths.
+-- Jira ..................: N/A
+-- </Metadata>
+--
+-- <Synopsis>
+-- Creates a simple ascending composite index over code and record status.
+-- </Synopsis>
+--
+-- <Revision History>
+-- Revisioner | Date | Jira No (if known) | Change |
+-- R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+-- </Revision History>
+
+CREATE INDEX TPLACCIDX
+ON TPLACCMST (
+  CODE ASC,
+  RECORD_STATUS ASC
+);
+stop;

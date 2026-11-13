@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codegen DSPF"
+  short_description: "Generate IBM i DDS members for DSPF and PRTF"

@@ -1,0 +1,42 @@
+-- <Metadata>
+-- Source Name .........: OBJECT_NAME
+-- Created By ...........: R. Strauss
+-- Date Created .........: 2026-08-28
+-- Source Description ..: SQL table scaffold with canonical audit columns.
+-- Jira ..................: N/A
+-- </Metadata>
+--
+-- <Synopsis>
+-- Creates a table with identity key, business columns, and audit metadata.
+-- </Synopsis>
+--
+-- <Revision History>
+-- Revisioner | Date | Jira No (if known) | Change |
+-- R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+-- </Revision History>
+create or replace table
+  OBJECT_NAME
+for system name
+  SYSTEM_NAME (
+    ID for ID dec(10, 0) not null generated ALWAYS as identity,
+    CODE for CODE char(20) not null default ' ',
+    DESCRIPTION for DSCRP varchar(128) not null default ' ',
+    -- Standard Columns
+    RecordStatus for rcdsts char(1) not null default 'A',
+    beginning_time for begtim timestamp(12) not null generated ALWAYS as row begin,
+    ending_time for endtim timestamp(12) not null generated ALWAYS as row end,
+    transaction_start for trxstr timestamp(12) not null generated ALWAYS as transaction start ID,
+    period system_time (beginning_time, ending_time),
+    -- Audit Columns
+    aud_user for audusr varchar(18) generated ALWAYS as (user),
+    aud_change for audchg char(1) generated ALWAYS as (data CHANGE OPERATION),
+    aud_jobname for audjob varchar(28) generated ALWAYS as (qsys2.job_name),
+    aud_pgm for audpgm varchar(255) allocate (20) generated ALWAYS as (current client_programid),
+    constraint SYSTEM_NAME_PK primary key (ID)
+  ) rcdfmt SYSTEM_NAME;
+
+
+label on table OBJECT_NAME is 'Generated table OBJECT_NAME';
+
+
+stop;

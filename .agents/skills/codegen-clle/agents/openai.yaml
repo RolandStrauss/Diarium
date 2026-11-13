@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codegen CLLE"
+  short_description: "Generate IBM i CL members for CLLE, CLP, and CL"

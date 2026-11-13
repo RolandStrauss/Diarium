@@ -1,0 +1,22 @@
+     A* <Metadata>
+     A* Source Name .........: TPLCUSPF
+     A* Created By ...........: R. Strauss
+     A* Date Created .........: 2026-08-28
+     A* Source Description ..: Physical file scaffold for IBM i DDS data storage.
+     A* Jira ..................: N/A
+     A* </Metadata>
+     A*
+     A* <Synopsis>
+     A* Minimal PF with one record format and keyed access example.
+     A* </Synopsis>
+     A*
+     A* <Revision History>
+     A* Revisioner | Date | Jira No (if known) | Change |
+     A* R. Strauss | 2026-08-28 | N/A | Initial scaffold |
+     A* </Revision History>
+     A          R TPLCUSPFR                  TEXT('Physical file record format')
+     A            ID             10A           TEXT('Business identifier')
+     A            NAME           50A           TEXT('Display name')
+     A            STATUS         10A           TEXT('Status code')
+     A            CRTTS          26A           TEXT('Created timestamp ISO')
+     A          K ID
