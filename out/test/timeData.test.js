@@ -116,21 +116,25 @@ suite('Manual timesheet', () => {
         vm.runInContext(script, context);
         const element = (id) => document.getElementById(id);
         const send = (type, data) => receive({ data: { type, data: structuredClone(data) } });
-        return { context, document, element, messages, send };
+        return { context, document, element, messages, send, deliver: (message) => receive({ data: message }) };
     }
     test('filters across years, combines filters and counts completed visible entries', () => {
         const ui = frontend();
         const entries = {
-            '2024-02-29': { date: '2024-02-29', task: 'Design', timeIn: '23:00', timeOut: '01:00' },
-            '2026-01-01': { date: '2026-01-01', task: 'design review', timeIn: '09:00', timeOut: '' },
-            '2026-02-01': { date: '2026-02-01', task: 'Other', timeIn: '10:00', timeOut: '10:00' },
+            '2024-02-29': [
+                { id: 'design-1', date: '2024-02-29', task: 'Design', timeIn: '23:00', timeOut: '01:00' },
+                { id: 'design-2', date: '2024-02-29', task: 'Design review', timeIn: '23:30', timeOut: '01:30' },
+            ],
+            '2026-01-01': [{ id: 'incomplete', date: '2026-01-01', task: 'design review', timeIn: '09:00', timeOut: '' }],
+            '2026-02-01': [{ id: 'other', date: '2026-02-01', task: 'Other', timeIn: '10:00', timeOut: '10:00' }],
         };
         ui.send('state', { entries, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
         ui.element('filter-task').value = 'DESIGN';
         ui.element('filter-task').dispatch('input');
         assert.strictEqual(ui.element('row-count').textContent, '2 dates shown');
-        assert.strictEqual(ui.element('entry-count').textContent, '1');
-        assert.strictEqual(ui.element('entry-total').textContent, '2h 00m');
+        assert.strictEqual(ui.element('entry-count').textContent, '2');
+        assert.strictEqual(ui.element('entry-total').textContent, '4h 00m');
+        assert.match(ui.element('entries-body').innerHTML, /4h 00m/);
         ui.element('filter-date').value = '2026-01-01';
         ui.element('filter-date').dispatch('change');
         assert.strictEqual(ui.element('row-count').textContent, '1 date shown');
@@ -140,8 +144,8 @@ suite('Manual timesheet', () => {
         assert.strictEqual(ui.element('row-count').textContent, '0 dates shown');
         ui.element('summary-date').value = '2024-02-29';
         ui.element('summary-date').dispatch('change');
-        assert.strictEqual(ui.element('period-total').textContent, '2h 00m');
-        assert.strictEqual(ui.element('period-count').textContent, '1');
+        assert.strictEqual(ui.element('period-total').textContent, '4h 00m');
+        assert.strictEqual(ui.element('period-count').textContent, '2');
         ui.element('clear-filters').dispatch('click');
         ui.element('year-select').value = '2024';
         ui.element('year-select').dispatch('change');
@@ -184,8 +188,8 @@ suite('Manual timesheet', () => {
     });
     test('keeps unsaved row edits and the original expected entry across broadcasts', () => {
         const ui = frontend();
-        const original = { date: '2026-10-21', task: 'Original', timeIn: '09:00', timeOut: '17:00' };
-        const state = { entries: { [original.date]: original }, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null };
+        const original = { id: 'entry-1', date: '2026-10-21', task: 'Original', timeIn: '09:00', timeOut: '17:00' };
+        const state = { entries: { [original.date]: [original] }, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null };
         ui.send('state', state);
         const task = new Element();
         task.value = 'My unsaved draft';
@@ -194,41 +198,76 @@ suite('Manual timesheet', () => {
         const timeOut = new Element();
         timeOut.value = '17:00';
         const row = {
-            dataset: { date: original.date, expected: JSON.stringify(original) },
+            dataset: { date: original.date, id: original.id, expected: JSON.stringify(original) },
             querySelector: (selector) => selector.includes('"task"') ? task : selector.includes('"timeIn"') ? timeIn : timeOut,
         };
         const target = { closest: () => row };
         ui.context.rowEvent = { target };
         vm.runInContext('rememberRow(rowEvent)', ui.context);
         const changed = { ...original, task: 'Another panel' };
-        ui.send('saved', { ...state, entries: { [original.date]: changed } });
+        ui.send('saved', { ...state, entries: { [original.date]: [changed] } });
         assert.match(ui.element('report-body').innerHTML, /My unsaved draft/);
         assert.match(ui.element('report-error').textContent, /draft is retained/);
         vm.runInContext('saveRow(rowEvent)', ui.context);
         assert.deepStrictEqual(JSON.parse(JSON.stringify(ui.messages.at(-1))), {
-            type: 'saveEntry', entry: { ...original, task: 'My unsaved draft' }, expected: original,
+            type: 'saveEntry',
+            entry: { date: original.date, task: 'My unsaved draft', timeIn: original.timeIn, timeOut: original.timeOut },
+            id: original.id,
+            expected: original,
         });
         vm.runInContext('deleteRow(rowEvent)', ui.context);
         assert.deepStrictEqual(JSON.parse(JSON.stringify(ui.messages.at(-1))), {
-            type: 'deleteEntry', date: original.date, expected: original,
+            type: 'deleteEntry', date: original.date, id: original.id, expected: original,
         });
-        ui.send('saved', { ...state, entries: { [original.date]: changed } });
+        ui.send('saved', { ...state, entries: { [original.date]: [changed] } });
         assert.match(ui.element('report-body').innerHTML, /My unsaved draft/);
     });
-    test('rejects invalid and duplicate new entries without posting them', () => {
+    test('allows multiple entries per date and rejects invalid dates', () => {
         const ui = frontend();
-        const entry = { date: '2026-10-21', task: 'Existing', timeIn: '', timeOut: '' };
-        ui.send('state', { entries: { [entry.date]: entry }, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
+        const entry = { id: 'existing', date: '2026-10-21', task: 'Existing', timeIn: '', timeOut: '' };
+        ui.send('state', { entries: { [entry.date]: [entry] }, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
+        assert.match(ui.element('entries-body').innerHTML, /0h 00m/);
+        assert.match(ui.element('report-body').innerHTML, /0h 00m/);
         const count = ui.messages.length;
         ui.element('add-date').value = entry.date;
         ui.element('add-task').value = 'New';
         ui.element('add-form').dispatch('submit');
-        assert.strictEqual(ui.messages.length, count);
-        assert.match(ui.element('entries-error').textContent, /already an entry/);
-        assert.strictEqual(ui.element('add-date').attributes['aria-invalid'], 'true');
+        assert.strictEqual(ui.messages.length, count + 1);
+        assert.strictEqual(ui.messages.at(-1).type, 'createEntry');
+        assert.strictEqual(ui.messages.at(-1).entry.date, entry.date);
         ui.element('add-date').value = '2026-02-30';
         ui.element('add-form').dispatch('submit');
         assert.match(ui.element('entries-error').textContent, /valid calendar date/);
+    });
+    test('keeps edits made while a new row is being saved', () => {
+        const ui = frontend();
+        ui.send('state', { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
+        const task = new Element();
+        task.value = 'First version';
+        const timeIn = new Element();
+        timeIn.value = '09:00';
+        const timeOut = new Element();
+        timeOut.value = '10:00';
+        const discard = new Element();
+        const row = {
+            dataset: { date: '2026-10-21', id: '', expected: 'null' },
+            querySelector: (selector) => selector.includes('"task"') ? task
+                : selector.includes('"timeIn"') ? timeIn : selector.includes('"timeOut"') ? timeOut : discard,
+        };
+        ui.context.rowEvent = { target: { closest: () => row } };
+        vm.runInContext('saveRow(rowEvent)', ui.context);
+        const request = ui.messages.at(-1);
+        assert.strictEqual(request.type, 'createEntry');
+        task.value = 'Edited before acknowledgement';
+        vm.runInContext('rememberRow(rowEvent)', ui.context);
+        const created = {
+            id: 'a'.repeat(32), date: row.dataset.date, task: 'First version', timeIn: '09:00', timeOut: '10:00',
+        };
+        ui.send('saved', {
+            entries: { [created.date]: [created] }, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null,
+        });
+        ui.deliver({ type: 'entryCreated', requestId: request.requestId, entry: created });
+        assert.match(ui.element('entries-body').innerHTML, /Edited before acknowledgement/);
     });
     test('retains a time without a task as an unsaved draft', () => {
         const ui = frontend();

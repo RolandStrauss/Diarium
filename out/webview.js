@@ -99,7 +99,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 </header>
 <main>
 <section id="entries-view" class="view" role="tabpanel" aria-labelledby="entries-tab">
-<div class="toolbar"><div><label for="year-select">Calendar year</label><select id="year-select"></select></div><p class="subtle">One entry per date. Overnight shifts are calculated automatically.</p></div>
+<div class="toolbar"><div><label for="year-select">Calendar year</label><select id="year-select"></select></div><p class="subtle">Add multiple entries per date. Overnight shifts are calculated automatically.</p></div>
 <div class="period-controls">
 <label>Summary period<select id="summary-kind" aria-label="Summary period"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
 <label>Summary date<input id="summary-date" type="date" aria-label="Summary date" aria-describedby="entries-error"></label>
@@ -127,7 +127,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 </div>
 <div id="entries-error" class="error" role="alert" aria-live="assertive"></div>
 <div class="table-wrap"><table aria-label="Daily time entries">
-<thead><tr><th scope="col">Date</th><th scope="col">Task</th><th scope="col">Time In</th><th scope="col">Time Out</th><th scope="col">Duration</th><th scope="col">Action</th></tr></thead>
+<thead><tr><th scope="col">Date</th><th scope="col">Task</th><th scope="col">Time In</th><th scope="col">Time Out</th><th scope="col">Entry duration</th><th scope="col">Daily total</th><th scope="col">Action</th></tr></thead>
 <tbody id="entries-body"></tbody>
 </table></div>
 </section>
@@ -157,7 +157,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <p id="print-warning" role="status">Print opens a landscape A4 PDF in your default viewer; use its Print command. You can also save a PDF directly to disk.</p>
 <div id="report-error" class="error" role="alert" aria-live="assertive"></div>
 <div class="table-wrap"><table id="report-table" aria-label="Custom reporting cycle">
-<thead><tr><th scope="col">Date</th><th scope="col">Day</th><th scope="col">Task</th><th scope="col">Time In</th><th scope="col">Time Out</th><th scope="col">Duration</th></tr></thead>
+<thead><tr><th scope="col">Date</th><th scope="col">Day</th><th scope="col">Task</th><th scope="col">Time In</th><th scope="col">Time Out</th><th scope="col">Entry duration</th><th scope="col">Daily total</th></tr></thead>
 <tbody id="report-body"></tbody>
 </table></div>
 <div id="print-summary" class="totals" aria-live="polite"></div>
@@ -167,8 +167,8 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 const vscode = acquireVsCodeApi();
 const byId = (id) => document.getElementById(id);
 let data = { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null, paused: false, excluded: false };
-const drafts = {};
-let periodDraft = null; let rateDraft = null; let renderPending = false;
+const drafts = {}; const pendingFormEntries = {};
+let periodDraft = null; let rateDraft = null; let renderPending = false; let nextRequestId = 0;
 const dateFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 function esc(value) { return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 function dateObj(value) { return new Date(value + 'T00:00:00Z'); }
@@ -195,10 +195,13 @@ function periodEnd(value) {
 function minutes(entry) { if (!entry || !entry.timeIn || !entry.timeOut) return null; const a = entry.timeIn.match(/^([01]\\d|2[0-3]):([0-5]\\d)$/); const b = entry.timeOut.match(/^([01]\\d|2[0-3]):([0-5]\\d)$/); if (!a || !b) return null; const start = Number(a[1]) * 60 + Number(a[2]); let end = Number(b[1]) * 60 + Number(b[2]); if (end < start) end += 1440; return end - start; }
 function durationText(value) { return Math.floor(value / 60) + 'h ' + String(value % 60).padStart(2, '0') + 'm'; }
 function setError(id, message) { byId(id).textContent = message || ''; }
-function allEntries() { return Object.values(data.entries); }
-function entryFor(date) { return drafts[date]?.entry || data.entries[date] || { date, task: '', timeIn: '', timeOut: '' }; }
-function expectedFor(date) { return drafts[date] ? drafts[date].expected : (data.entries[date] || null); }
-function sameEntry(a, b) { return (!a && !b) || Boolean(a && b && a.date === b.date && a.task === b.task && a.timeIn === b.timeIn && a.timeOut === b.timeOut); }
+function entriesFor(date) {
+ const value = data.entries[date];
+ return Array.isArray(value) ? value : value ? [value] : [];
+}
+function allEntries() { return Object.values(data.entries).reduce((entries, value) => entries.concat(Array.isArray(value) ? value : value ? [value] : []), []); }
+function draftKey(date, id) { return id || 'new:' + date; }
+function sameEntry(a, b) { return (!a && !b) || Boolean(a && b && a.id === b.id && a.date === b.date && a.task === b.task && a.timeIn === b.timeIn && a.timeOut === b.timeOut); }
 function fieldError(input, errorId, message) {
  input.setAttribute('aria-invalid', String(Boolean(message))); setError(errorId, message);
 }
@@ -230,56 +233,74 @@ function renderEntries() {
  if (filterDate) dates.add(filterDate);
  else { const count = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 366 : 365; for (let day = 0; day < count; day++) dates.add(addDays(String(year).padStart(4, '0') + '-01-01', day)); }
  if (taskQuery) allEntries().filter((entry) => entry.task.toLowerCase().includes(taskQuery)).forEach((entry) => dates.add(entry.date));
- let visible = Array.from(dates).sort().filter((date) => {
-  const entry = data.entries[date]; if (filterDate && date !== filterDate) return false;
-  return !taskQuery || (entry && entry.task.toLowerCase().includes(taskQuery));
+ const visible = Array.from(dates).sort().filter((date) => {
+  if (filterDate && date !== filterDate) return false;
+  return !taskQuery || entriesFor(date).some((entry) => entry.task.toLowerCase().includes(taskQuery));
  });
- if (filterDate && taskQuery && data.entries[filterDate] && !visible.includes(filterDate)) visible = [];
  byId('row-count').textContent = visible.length + (visible.length === 1 ? ' date shown' : ' dates shown');
- byId('entries-body').innerHTML = visible.map((date) => {
-  const entry = entryFor(date); const value = minutes(entry); const incomplete = Boolean(entry.timeIn) !== Boolean(entry.timeOut);
-  return '<tr data-date="' + date + '" data-expected="' + esc(JSON.stringify(expectedFor(date))) + '" class="' + (incomplete ? 'incomplete ' : '') + (dateObj(date).getUTCDay() % 6 === 0 ? 'weekend' : '') + '">' +
-   '<td class="date">' + esc(dateText(date)) + (dateObj(date).getUTCDay() % 6 === 0 ? ' (Weekend)' : '') + '</td>' +
-   '<td class="task"><input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="entries-error" aria-label="Task for ' + esc(dateText(date)) + '"></td>' +
-   '<td class="time"><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="entries-error" aria-label="Time In for ' + esc(dateText(date)) + '"></td>' +
-   '<td class="time"><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="entries-error" aria-label="Time Out for ' + esc(dateText(date)) + '"></td>' +
-   '<td class="duration ' + (incomplete ? 'warning-text' : '') + '" aria-label="Duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td>' +
-   '<td><button type="button" data-action="delete" aria-label="Delete entry for ' + esc(dateText(date)) + '" ' + (data.entries[date] ? '' : 'disabled') + '>Delete</button>' +
-   ' <button type="button" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[date] ? '' : ' hidden') + '>Discard draft</button></td></tr>';
- }).join('');
+ const visibleEntries = [];
+ const rows = [];
+ visible.forEach((date) => {
+  const saved = taskQuery
+   ? entriesFor(date).filter((entry) => entry.task.toLowerCase().includes(taskQuery))
+   : entriesFor(date);
+  const records = saved.length ? saved : [{ date, task: '', timeIn: '', timeOut: '' }];
+  const completed = saved.map(minutes).filter((value) => value !== null);
+  const dailyTotal = durationText(completed.reduce((sum, value) => sum + value, 0));
+  records.forEach((original, index) => {
+   const key = draftKey(date, original.id);
+   const entry = drafts[key]?.entry || original;
+   const value = minutes(entry); const incomplete = Boolean(entry.timeIn) !== Boolean(entry.timeOut);
+   const savedEntry = original.id ? original : null;
+   if (savedEntry) visibleEntries.push(savedEntry);
+   rows.push('<tr data-date="' + date + '" data-id="' + esc(original.id || '') + '" data-expected="' + esc(JSON.stringify(savedEntry)) + '" class="' + (incomplete ? 'incomplete ' : '') + (dateObj(date).getUTCDay() % 6 === 0 ? 'weekend' : '') + '">' +
+    '<td class="date">' + esc(dateText(date)) + (dateObj(date).getUTCDay() % 6 === 0 ? ' (Weekend)' : '') + '</td>' +
+    '<td class="task"><input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="entries-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
+    '<td class="time"><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="entries-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
+    '<td class="time"><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="entries-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
+    '<td class="duration ' + (incomplete ? 'warning-text' : '') + '" aria-label="Entry duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td>' +
+    '<td class="duration">' + (index === 0 ? dailyTotal : '') + '</td>' +
+    '<td><button type="button" data-action="delete" aria-label="Delete entry ' + (index + 1) + ' for ' + esc(dateText(date)) + '" ' + (savedEntry ? '' : 'disabled') + '>Delete</button>' +
+    ' <button type="button" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + '>Discard draft</button></td></tr>');
+  });
+ });
+ byId('entries-body').innerHTML = rows.join('');
  byId('entries-body').querySelectorAll('input').forEach((input) => { input.addEventListener('input', rememberRow); input.addEventListener('change', saveRow); });
  byId('entries-body').querySelectorAll('[data-action="discard"]').forEach((button) => button.addEventListener('click', discardDraft));
  byId('entries-body').querySelectorAll('[data-action="delete"]').forEach((button) => button.addEventListener('click', deleteRow));
- updateEntryTotals(visible);
+ updateEntryTotals(visibleEntries);
 }
-function updateEntryTotals(visibleDates) {
- const visibleSet = new Set(visibleDates);
- const filtered = allEntries().filter((entry) => visibleSet.has(entry.date));
- const values = filtered.map(minutes).filter((value) => value !== null);
+function updateEntryTotals(visibleEntries) {
+ const values = visibleEntries.map(minutes).filter((value) => value !== null);
  byId('entry-total').textContent = durationText(values.reduce((sum, value) => sum + value, 0));
  byId('entry-count').textContent = String(values.length);
 }
 function saveRow(event) {
  const row = event.target.closest('tr'); const fields = { task: row.querySelector('[data-field="task"]'), timeIn: row.querySelector('[data-field="timeIn"]'), timeOut: row.querySelector('[data-field="timeOut"]') };
  const entry = { date: row.dataset.date, task: fields.task.value.trim(), timeIn: fields.timeIn.value, timeOut: fields.timeOut.value };
+ const id = row.dataset.id; const key = draftKey(entry.date, id);
  const expected = JSON.parse(row.dataset.expected);
- drafts[entry.date] = { entry, expected, pending: false };
+ if (!id && !entry.task && !entry.timeIn && !entry.timeOut) { delete drafts[key]; return; }
+ const requestId = id ? undefined : 'row-' + (++nextRequestId);
+ drafts[key] = { entry, id, expected, requestId, pending: false };
  if (!validateRow(entry, fields, 'entries-error', true)) return;
- drafts[entry.date].pending = true;
- vscode.postMessage({ type: 'saveEntry', entry, expected });
+ drafts[key].pending = true;
+ if (id) vscode.postMessage({ type: 'saveEntry', entry, id, expected });
+ else vscode.postMessage({ type: 'createEntry', entry, requestId });
 }
 function rememberRow(event) {
- const row = event.target.closest('tr'); const date = row.dataset.date;
- drafts[date] = { entry: { date, task: row.querySelector('[data-field="task"]').value, timeIn: row.querySelector('[data-field="timeIn"]').value, timeOut: row.querySelector('[data-field="timeOut"]').value }, expected: JSON.parse(row.dataset.expected), pending: false };
- row.querySelector('[data-action="discard"]').hidden = false;
+ const row = event.target.closest('tr'); const date = row.dataset.date; const id = row.dataset.id; const key = draftKey(date, id);
+ const previous = drafts[key];
+ drafts[key] = { entry: { date, task: row.querySelector('[data-field="task"]').value, timeIn: row.querySelector('[data-field="timeIn"]').value, timeOut: row.querySelector('[data-field="timeOut"]').value, ...(id ? { id } : {}) }, id, expected: previous ? previous.expected : JSON.parse(row.dataset.expected), requestId: previous?.requestId, pending: false };
+ const discard = row.querySelector('[data-action="discard"]'); if (discard) discard.hidden = false;
 }
 function deleteRow(event) {
- const row = event.target.closest('tr'); const date = row.dataset.date;
- if (drafts[date]) drafts[date].deleting = true;
- vscode.postMessage({ type: 'deleteEntry', date, expected: JSON.parse(row.dataset.expected) });
+ const row = event.target.closest('tr'); const date = row.dataset.date; const id = row.dataset.id; const key = draftKey(date, id);
+ if (drafts[key]) drafts[key].deleting = true;
+ vscode.postMessage({ type: 'deleteEntry', date, id, expected: JSON.parse(row.dataset.expected) });
 }
 function discardDraft(event) {
- delete drafts[event.target.closest('tr').dataset.date]; setError('entries-error', ''); setError('report-error', ''); renderEntries(); renderReport();
+ const row = event.target.closest('tr'); delete drafts[draftKey(row.dataset.date, row.dataset.id)]; setError('entries-error', ''); setError('report-error', ''); renderEntries(); renderReport();
 }
 function renderSummary() {
  const selected = byId('summary-date').value; const kind = byId('summary-kind').value;
@@ -316,11 +337,23 @@ function renderReport() {
  byId('hourly-rate').value = rateDraft ? rateDraft.value : (data.hourlyRate === null ? '' : String(data.hourlyRate));
  byId('discard-period').hidden = !periodDraft; byId('discard-rate').hidden = !rateDraft;
  byId('report-title').textContent = 'Period report: ' + dateText(start) + ' to ' + dateText(end);
- let total = 0; let days = 0; const rows = [];
+ let total = 0; const loggedDates = new Set(); const rows = [];
  for (let date = start; date <= end;) {
-  const entry = entryFor(date); const value = minutes(entry); const savedValue = minutes(data.entries[date]); const incomplete = Boolean(entry.timeIn) !== Boolean(entry.timeOut); if (savedValue !== null) { total += savedValue; days++; }
-  const weekday = dateObj(date).getUTCDay();
-	rows.push('<tr data-date="' + date + '" data-expected="' + esc(JSON.stringify(expectedFor(date))) + '" class="' + (incomplete ? 'incomplete ' : '') + (weekday === 0 || weekday === 6 ? 'weekend' : '') + '"><td class="date">' + esc(date) + '</td><td>' + esc(new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' }).format(dateObj(date))) + '</td><td class="task"><input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="report-error" aria-label="Task for ' + esc(dateText(date)) + '"> <button type="button" class="screen-only" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[date] ? '' : ' hidden') + '>Discard draft</button><span class="print-task"></span></td><td><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="report-error" aria-label="Time In for ' + esc(dateText(date)) + '"><span class="print-time">' + esc(entry.timeIn) + '</span></td><td><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="report-error" aria-label="Time Out for ' + esc(dateText(date)) + '"><span class="print-time">' + esc(entry.timeOut) + '</span></td><td class="duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td></tr>');
+	const entries = entriesFor(date);
+	const records = entries.length ? entries : [{ date, task: '', timeIn: '', timeOut: '' }];
+	const completed = entries.map(minutes).filter((value) => value !== null);
+	const dailyMinutes = completed.reduce((sum, value) => sum + value, 0);
+	const dailyTotal = durationText(dailyMinutes);
+	if (completed.length) { total += dailyMinutes; loggedDates.add(date); }
+	for (const [index, original] of records.entries()) {
+		const key = draftKey(date, original.id);
+		const entry = drafts[key]?.entry || original;
+		const value = minutes(entry);
+		const incomplete = Boolean(entry.timeIn) !== Boolean(entry.timeOut);
+		const weekday = dateObj(date).getUTCDay();
+		const savedEntry = original.id ? original : null;
+		rows.push('<tr data-date="' + date + '" data-id="' + esc(original.id || '') + '" data-expected="' + esc(JSON.stringify(savedEntry)) + '" class="' + (incomplete ? 'incomplete ' : '') + (weekday === 0 || weekday === 6 ? 'weekend' : '') + '"><td class="date">' + esc(date) + '</td><td>' + esc(new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' }).format(dateObj(date))) + '</td><td class="task"><input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="report-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"> <button type="button" class="screen-only" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + '>Discard draft</button><span class="print-task"></span></td><td><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="report-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"><span class="print-time">' + esc(entry.timeIn) + '</span></td><td><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="report-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"><span class="print-time">' + esc(entry.timeOut) + '</span></td><td class="duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td><td class="duration">' + (index === 0 ? dailyTotal : '') + '</td></tr>');
+	}
   if (date === end) break;
   date = addDays(date, 1);
  }
@@ -328,20 +361,27 @@ function renderReport() {
  byId('report-body').querySelectorAll('input').forEach((input) => { input.addEventListener('input', rememberRow); input.addEventListener('change', saveReportRow); });
  byId('report-body').querySelectorAll('[data-action="discard"]').forEach((button) => button.addEventListener('click', discardDraft));
  byId('report-body').querySelectorAll('tr').forEach((row) => row.querySelector('.print-task').textContent = row.querySelector('[data-field="task"]').value);
- byId('report-days').textContent = days + (days === 1 ? ' day logged' : ' days logged') + (Object.keys(drafts).some((date) => date >= start && date <= end) ? ' (saved entries only; drafts excluded)' : '');
+ const days = loggedDates.size;
+ byId('report-days').textContent = days + (days === 1 ? ' day logged' : ' days logged') + (Object.values(drafts).some((draft) => draft.entry.date >= start && draft.entry.date <= end) ? ' (saved entries only; drafts excluded)' : '');
  const rate = data.hourlyRate;
  const estimate = total / 60 * rate;
  byId('print-summary').innerHTML = '<div class="metric"><strong>' + durationText(total) + '</strong><span>Total hours</span></div><div class="metric"><strong>' + days + '</strong><span>Days logged</span></div>' + (rate === null ? '' : '<div class="metric"><strong>' + (Number.isFinite(estimate) ? new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }).format(estimate) : 'Estimate exceeds supported range') + '</strong><span>Estimated value (informational)</span></div>');
 }
 function saveReportRow(event) {
+ saveEntryRow(event, 'report-error', 'report');
+}
+function saveEntryRow(event, errorId, view) {
  const row = event.target.closest('tr'); const fields = { task: row.querySelector('[data-field="task"]'), timeIn: row.querySelector('[data-field="timeIn"]'), timeOut: row.querySelector('[data-field="timeOut"]') };
  const entry = { date: row.dataset.date, task: fields.task.value.trim(), timeIn: fields.timeIn.value, timeOut: fields.timeOut.value };
- row.querySelector('.print-task').textContent = entry.task;
- const expected = JSON.parse(row.dataset.expected);
- drafts[entry.date] = { entry, expected, pending: false };
- if (!validateRow(entry, fields, 'report-error', true)) return;
- drafts[entry.date].pending = true;
- vscode.postMessage({ type: 'saveEntry', entry, view: 'report', expected });
+ const id = row.dataset.id; const key = draftKey(entry.date, id); const expected = JSON.parse(row.dataset.expected);
+ const requestId = id ? undefined : 'row-' + (++nextRequestId);
+ drafts[key] = { entry, id, expected, requestId, pending: false };
+ if (!validateRow(entry, fields, errorId, true)) return;
+ if (!id && !entry.task && !entry.timeIn && !entry.timeOut) { delete drafts[key]; return; }
+ drafts[key].pending = true;
+ vscode.postMessage(id
+  ? { type: 'saveEntry', entry, id, expected, view }
+  : { type: 'createEntry', entry, requestId, view });
 }
 function render() { renderEntries(); renderSummary(); renderReport(); renderFileTimes(); }
 function setView(view) {
@@ -364,8 +404,9 @@ byId('add-form').addEventListener('submit', (event) => {
  const fields = { date: byId('add-date'), task: byId('add-task'), timeIn: byId('add-in'), timeOut: byId('add-out') };
  const entry = { date: fields.date.value, task: fields.task.value.trim(), timeIn: fields.timeIn.value, timeOut: fields.timeOut.value };
  if (!validateRow(entry, fields, 'entries-error', false)) return;
- if (data.entries[entry.date]) { fieldError(fields.date, 'entries-error', 'There is already an entry for this date. Edit the existing row instead.'); return; }
- vscode.postMessage({ type: 'createEntry', entry });
+ const requestId = 'form-' + (++nextRequestId);
+ pendingFormEntries[requestId] = entry;
+ vscode.postMessage({ type: 'createEntry', entry, requestId });
 });
 byId('period-start').addEventListener('input', () => {
  periodDraft = { value: byId('period-start').value, expectedValue: periodDraft ? periodDraft.expectedValue : data.periodStart, pending: false };
@@ -400,13 +441,39 @@ byId('time-card-button').addEventListener('click', () => vscode.postMessage({ ty
 byId('floating-timer-button').addEventListener('click', () => vscode.postMessage({ type: 'showFloatingTimer' }));
 window.addEventListener('message', (event) => {
  const message = event.data;
+ if (message.type === 'entryCreated') {
+  const key = Object.keys(drafts).find((candidate) => drafts[candidate].requestId === message.requestId);
+  if (key) {
+   const draft = drafts[key];
+   if (sameEntry({ ...draft.entry, id: message.entry.id }, message.entry)) delete drafts[key];
+   else {
+    delete drafts[key];
+    draft.id = message.entry.id; draft.expected = message.entry; draft.requestId = undefined; draft.pending = false;
+    drafts[draftKey(draft.entry.date, draft.id)] = draft;
+   }
+  }
+  const formEntry = pendingFormEntries[message.requestId];
+  if (formEntry) {
+   delete pendingFormEntries[message.requestId];
+   if (byId('add-date').value === formEntry.date && byId('add-task').value.trim() === formEntry.task &&
+    byId('add-in').value === formEntry.timeIn && byId('add-out').value === formEntry.timeOut) {
+    byId('add-task').value = ''; byId('add-in').value = ''; byId('add-out').value = '';
+   }
+  }
+  const active = document.activeElement;
+  if (active && active.closest('tr[data-date]') && drafts[draftKey(active.closest('tr[data-date]').dataset.date, active.closest('tr[data-date]').dataset.id)]) {
+   renderPending = true; renderFileTimes();
+  } else { renderYearSelect(); render(); }
+  return;
+ }
  if (message.type === 'state' || message.type === 'saved') {
   data = message.data;
-  Object.keys(drafts).forEach((date) => {
-   const entry = drafts[date].entry; const saved = data.entries[date];
-   if ((drafts[date].deleting && !saved) || (drafts[date].pending && ((!saved && !entry.task && !entry.timeIn && !entry.timeOut) || sameEntry(saved, entry)))) delete drafts[date];
+  Object.keys(drafts).forEach((key) => {
+   const draft = drafts[key];
+   const saved = draft.id ? entriesFor(draft.entry.date).find((entry) => entry.id === draft.id) : undefined;
+   if ((draft.deleting && !saved) || (draft.pending && saved && sameEntry(saved, { ...draft.entry, id: draft.id }))) delete drafts[key];
   });
-  if (Object.keys(drafts).some((date) => !sameEntry(drafts[date].expected, data.entries[date]))) {
+  if (Object.keys(drafts).some((key) => drafts[key].id && !sameEntry(drafts[key].expected, entriesFor(drafts[key].entry.date).find((entry) => entry.id === drafts[key].id)))) {
    const text = 'An entry changed elsewhere. Your draft is retained; copy it or discard it before editing the latest entry.';
    setError('entries-error', text); setError('report-error', text);
   }
@@ -414,11 +481,12 @@ window.addEventListener('message', (event) => {
   if (rateDraft?.pending && (rateDraft.value === '' ? null : Number(rateDraft.value)) === data.hourlyRate) rateDraft = null;
   if ((periodDraft && periodDraft.expectedValue !== data.periodStart) || (rateDraft && rateDraft.expectedValue !== data.hourlyRate)) setError('report-error', 'A setting changed elsewhere. Your draft is retained; copy it or discard it before editing the latest value.');
   const active = document.activeElement;
-  if (active && ((active.closest('tr[data-date]') && drafts[active.closest('tr[data-date]').dataset.date]) || (active.id === 'period-start' && periodDraft) || (active.id === 'hourly-rate' && rateDraft))) { renderPending = true; renderFileTimes(); }
+  if (active && ((active.closest('tr[data-date]') && drafts[draftKey(active.closest('tr[data-date]').dataset.date, active.closest('tr[data-date]').dataset.id)]) || (active.id === 'period-start' && periodDraft) || (active.id === 'hourly-rate' && rateDraft))) { renderPending = true; renderFileTimes(); }
   else { renderYearSelect(); render(); }
  }
  if (message.type === 'fileTimes') { data.fileTimes = message.data.fileTimes; data.activeFile = message.data.activeFile; data.paused = message.data.paused; data.excluded = message.data.excluded; data.activeEligible = message.data.activeEligible; renderFileTimes(); }
  if (message.type === 'error') {
+  if (message.requestId) delete pendingFormEntries[message.requestId];
   setError(message.view === 'report' ? 'report-error' : 'entries-error', message.message);
   if (Object.keys(drafts).length || periodDraft || rateDraft) {
    vscode.postMessage({ type: 'ready' });

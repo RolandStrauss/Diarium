@@ -14,12 +14,13 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 - File activity uses VS Code extension storage across workspaces. It stores
   local file paths and durations. It does not track untitled or virtual files,
   and it stays separate from daily entries and PDF reports.
-- Record one task and time pair per date. A time out earlier than time in is treated as an overnight shift.
+- Record multiple task-and-time pairs per date. A time out earlier than time in is treated as an overnight shift.
+  Overlapping ranges are allowed and summed independently.
 - Browse the 365 or 366 dates in a calendar year, filter by date or task, and review filtered totals.
 - Review daily, Monday-to-Sunday weekly, monthly, or yearly totals.
 - Open **Period report** to edit the 21st-to-20th reporting cycle and configure an optional hourly rate. **Print report** opens a landscape A4 PDF in your default PDF viewer; use the viewer's **Print** command to print it. A print copy is kept in extension storage without prompting for a save location. **Save as PDF** lets you choose where to save the report.
-- Timesheet PDF tasks currently support printable ASCII only. The extension reports unsupported
-  characters or content that cannot fit on one page instead of truncating or corrupting the report.
+- Timesheet PDFs use multiple landscape A4 pages when needed. Tasks support printable ASCII only; unsupported
+  characters are reported instead of truncating or corrupting the report.
 - Incomplete time pairs are highlighted and excluded from totals. Entries and preferences are saved as JSON in VS Code extension storage and persist across restarts; existing extension-stored data is migrated automatically.
 
 The initial reporting period starts on 21 October 2026. Its end date is calculated automatically. The hourly estimate is informational and does not represent payroll or an invoice.

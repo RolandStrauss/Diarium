@@ -5,7 +5,10 @@ import { mkdir, mkdtemp, open, readFile, rename, unlink, writeFile } from 'node:
 import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
-import { customPeriodEnd, formatDuration, isValidDate, validateEntry, type TimeEntry } from './timeData';
+import {
+	customPeriodEnd, formatDuration, isValidDate, validateEntry,
+	type StoredTimeEntry, type TimeEntry, type TimeEntriesByDate,
+} from './timeData';
 import { renderReportPdf } from './pdfReport';
 import { FileTimeTracker, summarizeFileTime } from './fileTimeTracker';
 import { FloatingTimer } from './floatingTimer';
@@ -21,7 +24,7 @@ const EXCLUDED_FILES_STORAGE_KEY = 'excludedFiles';
 const DEFAULT_PERIOD_START = '2026-10-21';
 
 interface TrackerState {
-	entries: Record<string, TimeEntry>;
+	entries: TimeEntriesByDate;
 	periodStart: string;
 	hourlyRate: number | null;
 }
@@ -32,22 +35,46 @@ let pendingTimesheetWrites = Promise.resolve();
 let pendingTimesheetLoad: Promise<TrackerState> | undefined;
 let stopTracking: (() => void) | undefined;
 
+function newEntryId(): string {
+	return randomBytes(16).toString('hex');
+}
+
+function isEntryId(value: unknown): value is string {
+	return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+}
+
 function parseState(stored: Partial<TrackerState> = {}): TrackerState {
 	if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
 		throw new Error('The saved timesheet is invalid. Restore or repair the JSON file before continuing.');
 	}
-	const entries: Record<string, TimeEntry> = {};
+	const entries: TimeEntriesByDate = {};
+	const ids = new Set<string>();
 	if (stored.entries !== undefined) {
 		if (!stored.entries || typeof stored.entries !== 'object' || Array.isArray(stored.entries)) {
 			throw new Error('The saved timesheet entries are invalid. Restore or repair the JSON file before continuing.');
 		}
 		for (const [date, candidate] of Object.entries(stored.entries)) {
-			if (!candidate || typeof candidate.date !== 'string' || typeof candidate.task !== 'string' ||
-				typeof candidate.timeIn !== 'string' || typeof candidate.timeOut !== 'string' ||
-				candidate.date !== date || validateEntry(candidate)) {
-				throw new Error(`The saved entry for ${date} is invalid. Restore or repair the JSON file before continuing.`);
+			const legacyEntry = !Array.isArray(candidate);
+			const rows = legacyEntry ? [candidate] : candidate;
+			entries[date] = rows.map((row): StoredTimeEntry => {
+				if (!row || typeof row !== 'object' || typeof row.date !== 'string' || typeof row.task !== 'string' ||
+					typeof row.timeIn !== 'string' || typeof row.timeOut !== 'string' ||
+					row.date !== date || validateEntry(row)) {
+					throw new Error(`The saved entry for ${date} is invalid. Restore or repair the JSON file before continuing.`);
+				}
+				const id = row.id === undefined && legacyEntry ? newEntryId() : row.id;
+				if (!isEntryId(id)) {
+					throw new Error(`The saved entry for ${date} has an invalid identifier. Restore or repair the JSON file before continuing.`);
+				}
+				if (ids.has(id)) {
+					throw new Error(`The saved entry for ${date} has a duplicate identifier. Restore or repair the JSON file before continuing.`);
+				}
+				ids.add(id);
+				return { ...row, id };
+			});
+			if (!entries[date].length) {
+				delete entries[date];
 			}
-			entries[date] = candidate;
 		}
 	}
 	const periodStart = stored.periodStart === undefined ? DEFAULT_PERIOD_START : stored.periodStart;
@@ -462,16 +489,19 @@ export function activate(context: vscode.ExtensionContext): void {
 		const postState = async (): Promise<void> => {
 			await panel.webview.postMessage({ type: 'state', data: { ...await getState(), ...currentSnapshot() } });
 		};
-		const assertUnchanged = (current: TimeEntry | undefined, expected: TimeEntry | null | undefined): void => {
-			if (expected === undefined || (current === undefined) !== (expected === null) ||
-				(current && expected && (current.date !== expected.date || current.task !== expected.task ||
-					current.timeIn !== expected.timeIn || current.timeOut !== expected.timeOut))) {
+		function assertUnchanged(
+			current: StoredTimeEntry | undefined,
+			expected: StoredTimeEntry | null | undefined,
+		): asserts current is StoredTimeEntry {
+			if (!current || !expected || current.id !== expected.id || current.date !== expected.date ||
+				current.task !== expected.task || current.timeIn !== expected.timeIn || current.timeOut !== expected.timeOut) {
 				throw new Error('This entry changed in another view. Reload it before editing again.');
 			}
-		};
+		}
 
 		panel.webview.onDidReceiveMessage(async (message: {
-			type: string; entry?: TimeEntry; expected?: TimeEntry | null; date?: string;
+			type: string; entry?: TimeEntry; id?: string; expected?: StoredTimeEntry | null; date?: string;
+			requestId?: string;
 			value?: string; expectedValue?: string | number | null; view?: 'entries' | 'report';
 		}) => {
 			if (!message || typeof message !== 'object' || typeof message.type !== 'string') {
@@ -501,32 +531,61 @@ export function activate(context: vscode.ExtensionContext): void {
 					if (validationError) {
 						throw new Error(validationError);
 					}
+					if (message.type === 'createEntry') {
+						if (typeof message.requestId !== 'string' || !message.requestId || message.requestId.length > 128) {
+							throw new Error('The new entry request is invalid. Try again.');
+						}
+						const created: StoredTimeEntry = {
+							...entry, id: newEntryId(), task: entry.task.trim(),
+						};
+						await changeState(state => ({
+							...state,
+							entries: { ...state.entries, [entry.date]: [...(state.entries[entry.date] ?? []), created] },
+						}));
+						await panel.webview.postMessage({ type: 'entryCreated', requestId: message.requestId, entry: created });
+						break;
+					}
+					if (!isEntryId(message.id)) {
+						throw new Error('Select a saved entry before editing it.');
+					}
 					await changeState(state => {
-						if (message.type === 'createEntry' && state.entries[entry.date]) {
-							throw new Error('There is already an entry for this date. Edit the existing row instead.');
-						}
-						if (message.type === 'saveEntry') {
-							assertUnchanged(state.entries[entry.date], message.expected);
-						}
+						const rows = state.entries[entry.date] ?? [];
+						const index = rows.findIndex(row => row.id === message.id);
+						const current = rows[index];
+						assertUnchanged(current, message.expected);
 						const entries = { ...state.entries };
 						if (blank) {
-							delete entries[entry.date];
+							const remaining = rows.filter(row => row.id !== message.id);
+							if (remaining.length) {
+								entries[entry.date] = remaining;
+							} else {
+								delete entries[entry.date];
+							}
 						} else {
-							entries[entry.date] = { ...entry, task: entry.task.trim() };
+							const updated = [...rows];
+							updated[index] = { ...entry, id: current.id, task: entry.task.trim() };
+							entries[entry.date] = updated;
 						}
 						return { ...state, entries };
 					});
 					break;
 				}
 				case 'deleteEntry':
-					if (!message.date || !isValidDate(message.date)) {
-						throw new Error('Enter a valid date for the entry to delete.');
+					if (!message.date || !isValidDate(message.date) || !isEntryId(message.id)) {
+						throw new Error('Select a valid entry to delete.');
 					}
 					await changeState(state => {
 						const date = message.date!;
-						assertUnchanged(state.entries[date], message.expected);
+						const rows = state.entries[date] ?? [];
+						const current = rows.find(row => row.id === message.id);
+						assertUnchanged(current, message.expected);
 						const entries = { ...state.entries };
-						delete entries[date];
+						const remaining = rows.filter(row => row.id !== message.id);
+						if (remaining.length) {
+							entries[date] = remaining;
+						} else {
+							delete entries[date];
+						}
 						return { ...state, entries };
 					});
 					break;
@@ -604,6 +663,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				const reason = error instanceof Error ? error.message : String(error);
 				await panel.webview.postMessage({
 					type: 'error',
+					requestId: message.requestId,
 					view: message.view ?? (message.type === 'setPeriodStart' || message.type === 'setHourlyRate' ? 'report' : 'entries'),
 					message: reason,
 				});

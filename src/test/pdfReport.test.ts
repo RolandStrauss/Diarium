@@ -34,7 +34,7 @@ function dateLabel(date: string): string {
 }
 
 suite('Timesheet PDF', () => {
-	test('fits every date of supported short and long cycles on one landscape A4 page', async () => {
+	test('fits every date of supported short and long empty cycles on one landscape A4 page', async () => {
 		for (const start of ['0001-01-01', '2024-02-01', '2024-01-31', '2026-10-21', '2026-12-21', '9999-12-01']) {
 			const pdf = await renderReportPdf({ entries: {}, periodStart: start, hourlyRate: null });
 			const source = pdf.toString('latin1');
@@ -55,6 +55,7 @@ suite('Timesheet PDF', () => {
 				}
 			}
 			assert.deepStrictEqual(dateCells, expected);
+			assert.ok(text.some(item => item.text === '0h 00m'));
 			assert.ok(text.some(item => item.text.includes(`Reporting period: ${dateLabel(start)} to ${dateLabel(end)}`)));
 			assert.ok(text.some(item => item.text === 'Total hours: 0h 00m     Days logged: 0'));
 			assert.ok(!text.some(item => item.text.includes('Hourly rate:')));
@@ -62,52 +63,77 @@ suite('Timesheet PDF', () => {
 	});
 
 	test('shows complete, overnight, zero, incomplete and task-only entries, labels and estimate', async () => {
-		const entries: Record<string, TimeEntry> = {
-			'2026-10-24': { date: '2026-10-24', task: 'Weekend work', timeIn: '22:30', timeOut: '01:15' },
-			'2026-10-25': { date: '2026-10-25', task: 'Partial', timeIn: '09:00', timeOut: '' },
-			'2026-10-26': { date: '2026-10-26', task: 'Zero', timeIn: '08:00', timeOut: '08:00' },
-			'2026-10-27': { date: '2026-10-27', task: 'Task only', timeIn: '', timeOut: '' },
+		const entries: Record<string, TimeEntry[]> = {
+			'2026-10-24': [
+				{ date: '2026-10-24', task: 'Weekend work', timeIn: '22:30', timeOut: '01:15' },
+				{ date: '2026-10-24', task: 'Overlapping task', timeIn: '22:00', timeOut: '23:00' },
+			],
+			'2026-10-25': [{ date: '2026-10-25', task: 'Partial', timeIn: '09:00', timeOut: '' }],
+			'2026-10-26': [{ date: '2026-10-26', task: 'Zero', timeIn: '08:00', timeOut: '08:00' }],
+			'2026-10-27': [{ date: '2026-10-27', task: 'Task only', timeIn: '', timeOut: '' }],
 		};
 		const text = pdfText(await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: 20 }));
 		for (const expected of ['Sat (Weekend)', 'Sun (Weekend)', 'INCOMPLETE', 'Weekend work', 'Partial',
-			'Task only', '22:30', '01:15', '2h 45m', '0h 00m',
-			'Total hours: 2h 45m     Days logged: 2',
-			'Hourly rate: 20     Estimated value (informational): 55.00']) {
+			'Overlapping task', 'Task only', 'Entry duration', 'Daily total', '22:30', '01:15', '1h 00m', '3h 45m', '0h 00m',
+			'Total hours: 3h 45m     Days logged: 2',
+			'Hourly rate: 20     Estimated value (informational): 75.00']) {
 			assert.ok(text.some(item => item.text === expected), expected);
 		}
+		assert.strictEqual(text.filter(item => item.text === '3h 45m').length, 1);
 		const zeroRate = pdfText(await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: 0 }));
 		assert.ok(zeroRate.some(item => item.text === 'Hourly rate: 0     Estimated value (informational): 0.00'));
+	});
+
+	test('paginates multiple entries per date without dropping entries', async () => {
+		const entries: Record<string, TimeEntry[]> = {
+			'2026-10-21': Array.from({ length: 60 }, (_, index) => ({
+				date: '2026-10-21', task: `Task ${index + 1}`, timeIn: '09:00', timeOut: '09:01',
+			})),
+		};
+		const pdf = await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: null });
+		const pageCount = Number(/\/Count (\d+)/.exec(pdf.toString('latin1'))?.[1]);
+		assert.ok(pageCount > 1);
+		const text = pdfText(pdf).map(item => item.text);
+		assert.strictEqual(text.filter(value => value === 'Entry duration').length, pageCount);
+		for (let index = 1; index <= 60; index++) {
+			assert.ok(text.includes(`Task ${index}`), `Task ${index}`);
+		}
+		assert.ok(text.includes('Total hours: 1h 00m     Days logged: 1'));
 	});
 
 	test('wraps long tasks without losing spaces or characters', async () => {
 		const task = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ '
 			+ ' Wide words  and spaces '.repeat(24);
-		const entries = { '2026-10-21': { date: '2026-10-21', task, timeIn: '', timeOut: '' } };
+		const entries = { '2026-10-21': [{ date: '2026-10-21', task, timeIn: '', timeOut: '' }] };
 		const pdf = await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: 1.5 });
-		assert.match(pdf.toString('latin1'), /\/Count 1\b/);
-		const lines = pdfText(pdf).filter(item => item.x === 181 && item.text !== 'Task');
+		assert.ok(Number(/\/Count (\d+)/.exec(pdf.toString('latin1'))?.[1]) >= 1);
+		const lines = pdfText(pdf).filter(item => item.x === 171 && item.text !== 'Task');
 		assert.ok(lines.length > 1);
 		assert.strictEqual(lines.map(item => item.text).join(''), task);
 	});
 
-	test('rejects unsupported characters, control characters, and tasks that cannot fit', async () => {
+	test('rejects unsupported characters and paginates very long tasks without truncation', async () => {
 		for (const task of ['caf\u00e9', 'emoji \u{1f600}', 'tab\there', 'new\nline', 'trailing\n']) {
-			const entries = { '2026-10-21': { date: '2026-10-21', task, timeIn: '', timeOut: '' } };
+			const entries = { '2026-10-21': [{ date: '2026-10-21', task, timeIn: '', timeOut: '' }] };
 			await assert.rejects(renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: null }),
 				/2026-10-21.*unsupported characters/);
 		}
-		const entries = { '2026-10-21': { date: '2026-10-21', task: 'W'.repeat(10000), timeIn: '', timeOut: '' } };
-		await assert.rejects(renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: null }),
-			/does not fit on one landscape A4 page/);
+		const task = 'W'.repeat(10000);
+		const entries = { '2026-10-21': [{ date: '2026-10-21', task, timeIn: '', timeOut: '' }] };
+		const pdf = await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: null });
+		assert.ok(Number(/\/Count (\d+)/.exec(pdf.toString('latin1'))?.[1]) > 1);
+		const lines = pdfText(pdf).filter(item => item.x === 171 && item.text !== 'Task');
+		assert.ok(lines.length > 1);
+		assert.strictEqual(lines.map(item => item.text).join(''), task);
 	});
 
 	test('rejects invalid input and an unrepresentable estimate instead of producing a misleading PDF', async () => {
 		await assert.rejects(renderReportPdf({ entries: {}, periodStart: '2026-02-30', hourlyRate: null }), /invalid period/);
 		await assert.rejects(renderReportPdf({ entries: {}, periodStart: '9999-12-31', hourlyRate: null }), /period end/);
 		await assert.rejects(renderReportPdf({ entries: {}, periodStart: '2026-10-21', hourlyRate: -1 }), /hourly rate/);
-		const entries = { '2026-10-21': { date: '2026-10-21', task: 'Work', timeIn: '09:00', timeOut: '10:00' } };
+		const entries = { '2026-10-21': [{ date: '2026-10-21', task: 'Work', timeIn: '09:00', timeOut: '10:00' }] };
 		await assert.rejects(renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: 1e21 }), /estimated value/);
-		entries['2026-10-21'].timeIn = '25:00';
+		entries['2026-10-21'][0].timeIn = '25:00';
 		await assert.rejects(renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: null }), /Time In/);
 	});
 });

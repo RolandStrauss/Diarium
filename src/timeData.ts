@@ -5,6 +5,13 @@ export interface TimeEntry {
 	timeOut: string;
 }
 
+export interface StoredTimeEntry extends TimeEntry {
+	id: string;
+}
+
+export type TimeEntriesByDate = Record<string, StoredTimeEntry[]>;
+export type ReportEntriesByDate = Record<string, TimeEntry[]>;
+
 export type PeriodKind = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface DateRange {

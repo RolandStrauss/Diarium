@@ -160,8 +160,8 @@ suite('Extension Test Suite', () => {
     test('renders the custom period as a PDF document', async () => {
         const pdf = await (0, pdfReport_1.renderReportPdf)({
             entries: {
-                '2026-10-24': { date: '2026-10-24', task: 'Weekend work', timeIn: '09:00', timeOut: '10:00' },
-                '2026-10-25': { date: '2026-10-25', task: 'Partial work', timeIn: '11:00', timeOut: '' },
+                '2026-10-24': [{ date: '2026-10-24', task: 'Weekend work', timeIn: '09:00', timeOut: '10:00' }],
+                '2026-10-25': [{ date: '2026-10-25', task: 'Partial work', timeIn: '11:00', timeOut: '' }],
             },
             periodStart: '2026-10-21',
             hourlyRate: 20,

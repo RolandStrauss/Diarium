@@ -17,7 +17,7 @@ capabilities and treats the draft's additional requirements as proposed work, no
 
 Time Tracker provides two separate, local-first experiences:
 
-- **Manual timesheet:** Record one task and time pair per date, review date-based totals, and produce a
+- **Manual timesheet:** Record multiple task-and-time pairs per date, review date-based totals, and produce a
   configurable reporting-cycle PDF.
 - **Automatic file activity:** See cumulative time for selected local files while the VS Code window is focused,
   including idle time. Review a shared timer snapshot and export a time card.
@@ -89,8 +89,8 @@ tests for these areas. Full release confidence still requires the checks in sect
   Timesheet panels reject stale edits. Other windows remain unavailable until the owner exits and they reload.
 - **Legacy totals:** Older `fileTimers` data remains separate and is not automatically merged. Users must
   reconcile its ownership and contents before relying on totals.
-- **Reports:** The one-page timesheet PDF rejects unsupported task characters or content that cannot fit.
-  Timesheet PDF tasks currently support printable ASCII only; the viewer controls physical print settings.
+- **Reports:** The paginated timesheet PDF rejects unsupported task characters. Timesheet PDF tasks support
+  printable ASCII only; the viewer controls physical print settings.
 - **Validation readiness:** Automated tests do not establish accessibility, cross-platform behavior, or release
   readiness by themselves. The Playwright workflow references tooling absent from the manifest.
 
@@ -113,9 +113,9 @@ Requirements apply to the release target. A baseline observation in section 4 do
 ### FR-01: Manual Entries
 
 - Each saved entry has a valid local calendar date, a nonblank task description, and zero, one, or two
-  24-hour `HH:mm` times. The date is the shift's start date. Only one entry per date is allowed.
-- Creating a duplicate must explain the constraint and preserve the existing entry. Users can edit or delete
-  an entry; deleting a row or clearing its task and both times removes that entry.
+  24-hour `HH:mm` times. The date is the shift's start date. Any number of entries may share a date.
+- Users can add, edit, or delete entries independently. Overlapping time ranges are allowed; totals sum each
+  completed entry and may therefore exceed elapsed time when ranges overlap.
 - A task-only entry is saved but has no duration and is not incomplete. A row with no task and no times is blank.
   A time without a task is invalid and must remain available for correction rather than being saved.
 - Exactly one time makes an entry incomplete. Keep the entered value, label the row, and exclude it from
@@ -128,20 +128,21 @@ Requirements apply to the release target. A baseline observation in section 4 do
 
 ### FR-02: Views, Filtering, and Periods
 
-- Show every date in the selected calendar year: 365 or 366 rows as appropriate. Never discard leap-day records.
+- Show every date in the selected calendar year: 365 or 366 dates, with one row per saved entry and an editable
+  blank row when a date has no entries. Never discard leap-day records.
 - Filter by exact date and case-insensitive task substring. With a task filter, search saved entries across
   years; when both filters are set, apply both. With neither filter, show the selected year.
-- Show filtered hours and completed-entry count for the visible matching entries. Update them on edit, delete,
-  and filter changes. Daily, Monday-to-Sunday weekly, calendar-month, and calendar-year summaries use the
-  selected summary date and include both endpoints; they are independent of grid filters.
+- Show daily totals, filtered hours, and completed-entry counts for visible matching entries. Update them on add,
+  edit, delete, and filter changes. Daily, Monday-to-Sunday weekly, calendar-month, and calendar-year summaries
+  use the selected summary date and include both endpoints; they are independent of grid filters.
 - The custom period defaults to 21 October 2026 for new data. Its editable start determines its read-only end:
   add one calendar month, clamping the day to the last day of the target month if needed, then subtract one day.
   For example, 21 December 2026 ends on 20 January 2027, and 31 January 2026 ends on 27 February 2026.
 - Reject a start date if its calculated period cannot be represented as a four-digit calendar date.
   Do not overwrite the last valid period on rejection.
-- The cycle report includes each inclusive date, day of week, task, editable times, daily duration, total hours,
-  and count of dates with complete valid pairs. Distinguish weekends and incomplete entries with text or
-  patterns as well as color.
+- The cycle report includes each inclusive date, day of week, every task and its editable times and duration,
+  summed daily duration, total hours, and count of dates with one or more complete valid pairs. Distinguish
+  weekends and incomplete entries with text or patterns as well as color.
 
 ### FR-03: Hourly Estimate and Timesheet PDF
 
@@ -151,12 +152,11 @@ Requirements apply to the release target. A baseline observation in section 4 do
 - Print opens the generated PDF in the default viewer; the user starts printing in that viewer. Save as PDF
   prompts for a destination. Cancellation writes nothing; errors are visible; success is reported only after
   the file is written or the viewer is opened, respectively.
-- The report must fit on one landscape A4 PDF page for every supported cycle, without omitting or clipping dates,
-  times, durations, totals, or the estimate. It must include the task column, period boundaries, and days logged.
-  Use at least 7.5-point type and label weekends and incomplete entries in grayscale. Never silently truncate
-  or corrupt a task: if all content cannot fit or be represented on one page, explain the limitation and do not
-  claim a complete report.
-- The viewer and printer control paper size, scaling, and margins. Tell users to print the generated A4 page
+- The report uses landscape A4 PDF pages and includes every date and entry without clipping or omission. Repeat
+  table headings on each page. Include the task column, period boundaries, daily and period totals, and days
+  logged. Use at least 7.5-point type and label weekends and incomplete entries in grayscale. Never silently
+  truncate or corrupt a task; explain content that cannot be represented and do not claim a complete report.
+- The viewer and printer control paper size, scaling, and margins. Tell users to print the generated A4 pages
   at a suitable scale; do not promise to detect every external printer setting.
 
 ### FR-04: Automatic File Tracking
@@ -223,6 +223,7 @@ Requirements apply to the release target. A baseline observation in section 4 do
   Await writes before confirming success; report failures and allow a later retry.
 - Invalid or unreadable stored data must produce a visible diagnostic and a non-destructive recovery path.
   Preserve the original data; never silently replace it with an empty store or discard malformed records.
+- Read legacy single-entry-per-date records as one-entry lists and preserve their date, task, and time values.
 - Migrate known legacy data only after validating it. Preserve the source until the destination is durably
   written, and make migration repeatable. If old and new totals both exist and their relationship is unknown,
   retain both without automatically summing or overwriting them; require explicit user reconciliation.
@@ -258,8 +259,9 @@ These are acceptance targets, not observed measurements or business metrics.
   exceed that bound and must not be represented as lossless recovery.
 - Restart preserves successfully settled data exactly. Repeated migration, canceled reset, write failures,
   malformed data, concurrent panels, and concurrent hosts preserve all applicable durable records.
-- Timesheet PDF contains every required date and total on one A4 page, or reports a legibility limitation without
-  claiming success. Card exports match the preview snapshot and include every counted file.
+- Timesheet PDF contains every required date, entry, and total across landscape A4 pages, or reports a
+  representation limitation without claiming success. Card exports match the preview snapshot and include every
+  counted file.
 - With 1,000 seeded file records, snapshot and card generation each complete within 200 ms on a documented
   reference machine. Record hardware, operating system, VS Code version, input, and timing method.
 
@@ -276,13 +278,13 @@ the release check still requires an in-host measurement.
 Use focused automated cases, then test the extension host and generated artifacts. Existing tests are starting
 points, not evidence that the full release criteria have passed. [E8]
 
-- Test dates, leap years, month-end clamping, year boundaries, invalid input, duplicates, partial rows, equal
-  times, overnight times, filters, counts, estimates, and restart persistence.
+- Test dates, leap years, month-end clamping, year boundaries, invalid input, multiple entries per date,
+  partial rows, equal times, overnight and overlapping times, filters, counts, estimates, and restart persistence.
 - Use a deterministic clock for start, switch, no editor, focus loss and regain, pause/resume, exclusions,
   reset, checkpoint, restart, and persistence-failure sequences.
 - Exercise simultaneous panels and extension hosts, ownership loss and recovery, failed writes and retry,
   malformed storage, and repeatable migration with conflicting legacy data.
-- Inspect generated PDFs for page count, every date and total, long tasks, weekends, incomplete entries,
+- Inspect generated PDFs for page count, every date and entry, totals, long tasks, weekends, incomplete entries,
   grayscale readability, and unsupported characters. Test print-viewer and save success, cancellation, and failure.
 - Test cards with empty data, more than five files, repeated and special-character names, long names, Unicode,
   multi-page PDFs, and preview/export snapshot equality.

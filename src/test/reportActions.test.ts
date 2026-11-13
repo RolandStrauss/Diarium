@@ -10,8 +10,10 @@ interface TestMessage {
 	type: string;
 	format?: string;
 	entry?: TimeEntry;
+	id?: string;
 	expected?: TimeEntry | null;
 	date?: string;
+	requestId?: string;
 	value?: string;
 	view?: 'entries' | 'report';
 }
@@ -283,12 +285,14 @@ suite('Report actions', () => {
 		await result.commands.get('time-tracker.openTimesheet')!();
 		const second = result.getReceiver();
 		const entry = { date: '2026-11-01', task: 'Original', timeIn: '09:00', timeOut: '10:00' };
-		await first({ type: 'createEntry', entry });
-		await second({ type: 'saveEntry', entry: { ...entry, task: 'Stale' }, expected: null });
-		assert.match(result.messages.at(-1)?.message ?? '', /changed in another view/);
-		await first({ type: 'saveEntry', entry: { ...entry, task: 'Updated' }, expected: entry });
+		await first({ type: 'createEntry', entry, requestId: 'first-create' });
 		const state = JSON.parse(await readFile(path.join(directory, 'timesheet.json'), 'utf8'));
-		assert.strictEqual(state.entries[entry.date].task, 'Updated');
+		const saved = state.entries[entry.date][0];
+		await second({ type: 'saveEntry', entry: { ...entry, task: 'Changed elsewhere' }, id: saved.id, expected: saved });
+		await first({ type: 'saveEntry', entry: { ...entry, task: 'Stale edit' }, id: saved.id, expected: saved });
+		assert.match(result.messages.at(-1)?.message ?? '', /changed in another view/);
+		const current = JSON.parse(await readFile(path.join(directory, 'timesheet.json'), 'utf8'));
+		assert.strictEqual(current.entries[entry.date][0].task, 'Changed elsewhere');
 	});
 
 	test('a failed timesheet write leaves prior data intact and allows retry', async () => {
@@ -298,13 +302,49 @@ suite('Report actions', () => {
 		await rename(stateFile, backup);
 		await mkdir(stateFile);
 		const entry = { date: '2026-11-01', task: 'Work', timeIn: '09:00', timeOut: '10:00' };
-		await result.receiveMessage({ type: 'createEntry', entry });
+		await result.receiveMessage({ type: 'createEntry', entry, requestId: 'retry-create' });
 		assert.strictEqual(result.messages.at(-1)?.type, 'error');
 		assert.deepStrictEqual(JSON.parse(await readFile(backup, 'utf8')).entries, {});
 		await rm(stateFile, { recursive: true });
 		await rename(backup, stateFile);
-		await result.receiveMessage({ type: 'createEntry', entry });
-		assert.strictEqual(JSON.parse(await readFile(stateFile, 'utf8')).entries[entry.date].task, 'Work');
+		await result.receiveMessage({ type: 'createEntry', entry, requestId: 'retry-create-again' });
+		assert.strictEqual(JSON.parse(await readFile(stateFile, 'utf8')).entries[entry.date][0].task, 'Work');
+	});
+
+	test('migrates a legacy one-entry-per-date store and preserves existing entries', async () => {
+		const date = '2026-11-01';
+		await writeFile(path.join(directory, 'timesheet.json'), JSON.stringify({
+			entries: { [date]: { date, task: 'Legacy', timeIn: '09:00', timeOut: '10:00' } },
+			periodStart: '2026-10-21',
+			hourlyRate: null,
+		}));
+		const result = await openTracker(undefined);
+		await result.receiveMessage({
+			type: 'createEntry',
+			entry: { date, task: 'New task', timeIn: '10:00', timeOut: '11:00' },
+			requestId: 'same-date-entry',
+		});
+		const saved = JSON.parse(await readFile(path.join(directory, 'timesheet.json'), 'utf8'));
+		assert.deepStrictEqual(saved.entries[date].map((entry: TimeEntry) => entry.task), ['Legacy', 'New task']);
+		assert.strictEqual(new Set(saved.entries[date].map((entry: { id: string }) => entry.id)).size, 2);
+	});
+
+	test('edits and deletes one entry without changing other entries on the same date', async () => {
+		const result = await openTracker(undefined);
+		const date = '2026-11-01';
+		const first = { date, task: 'First task', timeIn: '09:00', timeOut: '10:00' };
+		const second = { date, task: 'Second task', timeIn: '10:00', timeOut: '11:00' };
+		await result.receiveMessage({ type: 'createEntry', entry: first, requestId: 'first' });
+		await result.receiveMessage({ type: 'createEntry', entry: second, requestId: 'second' });
+		let stored = JSON.parse(await readFile(path.join(directory, 'timesheet.json'), 'utf8'));
+		const [savedFirst, savedSecond] = stored.entries[date];
+		await result.receiveMessage({
+			type: 'saveEntry', entry: { ...first, task: 'Updated first task' },
+			id: savedFirst.id, expected: savedFirst,
+		});
+		await result.receiveMessage({ type: 'deleteEntry', date, id: savedSecond.id, expected: savedSecond });
+		stored = JSON.parse(await readFile(path.join(directory, 'timesheet.json'), 'utf8'));
+		assert.deepStrictEqual(stored.entries[date].map((entry: TimeEntry) => entry.task), ['Updated first task']);
 	});
 
 	test('invalid stored entries are reported without rewriting the timesheet', async () => {
