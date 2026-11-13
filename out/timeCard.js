@@ -62,12 +62,17 @@ function createTimeCard(fileTimes, now = new Date()) {
         counts.set(file.name, (counts.get(file.name) ?? 0) + 1);
     }
     const occurrences = new Map();
+    const labels = new Set(files.map(file => file.name));
     for (const file of files) {
         file.percent = totalMilliseconds > 0 ? file.milliseconds / totalMilliseconds * 100 : 0;
         const name = file.name;
-        occurrences.set(name, (occurrences.get(name) ?? 0) + 1);
         if (counts.get(name) > 1) {
-            file.name = `${name} (${occurrences.get(name)})`;
+            let occurrence = occurrences.get(name) ?? 0;
+            do {
+                file.name = `${name} (${++occurrence})`;
+            } while (labels.has(file.name));
+            occurrences.set(name, occurrence);
+            labels.add(file.name);
         }
     }
     return { generatedAt: now.toISOString(), totalMilliseconds, files };
@@ -148,9 +153,9 @@ document.getElementById('refresh').addEventListener('click', () => vscode.postMe
 </html>`;
 }
 function renderTimeCardPdf(card) {
-    // shortcut: PDFKit's built-in fonts cannot render non-Latin names; use HTML/browser print until a Unicode font is bundled.
+    // shortcut: PDFKit's built-in fonts support printable ASCII/Latin-1 names; use HTML/browser print until a Unicode font is bundled.
     if (card.files.some(file => /[^\x20-\x7e\u00a0-\u00ff]/u.test(file.name))) {
-        return Promise.reject(new Error('PDF cards support Latin file names only. Save HTML and print it from your browser for these file names.'));
+        return Promise.reject(new Error('PDF cards support printable ASCII and Latin-1 file names only. Save HTML and print it from your browser for these file names.'));
     }
     return new Promise((resolve, reject) => {
         const document = new pdfkit_1.default({ size: 'A4', margin: 44, compress: true });

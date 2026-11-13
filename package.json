@@ -23,6 +23,26 @@
       {
         "command": "time-tracker.openTimeCard",
         "title": "Time Tracker: Preview Time Card"
+      },
+      {
+        "command": "time-tracker.showFloatingTimer",
+        "title": "Time Tracker: Show Floating Timer"
+      },
+      {
+        "command": "time-tracker.hideFloatingTimer",
+        "title": "Time Tracker: Hide Floating Timer"
+      },
+      {
+        "command": "time-tracker.toggleTracking",
+        "title": "Time Tracker: Pause / Resume File Tracking"
+      },
+      {
+        "command": "time-tracker.manageExclusions",
+        "title": "Time Tracker: Manage File Exclusions"
+      },
+      {
+        "command": "time-tracker.resetFileTimes",
+        "title": "Time Tracker: Reset File Activity"
       }
     ]
   },

@@ -125,9 +125,9 @@ document.getElementById('refresh').addEventListener('click', () => vscode.postMe
 }
 
 export function renderTimeCardPdf(card: TimeCard): Promise<Buffer> {
-	// shortcut: PDFKit's built-in fonts cannot render non-Latin names; use HTML/browser print until a Unicode font is bundled.
+	// shortcut: PDFKit's built-in fonts support printable ASCII/Latin-1 names; use HTML/browser print until a Unicode font is bundled.
 	if (card.files.some(file => /[^\x20-\x7e\u00a0-\u00ff]/u.test(file.name))) {
-		return Promise.reject(new Error('PDF cards support Latin file names only. Save HTML and print it from your browser for these file names.'));
+		return Promise.reject(new Error('PDF cards support printable ASCII and Latin-1 file names only. Save HTML and print it from your browser for these file names.'));
 	}
 	return new Promise((resolve, reject) => {
 		const document = new PDFDocument({ size: 'A4', margin: 44, compress: true });

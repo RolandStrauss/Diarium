@@ -49,6 +49,8 @@ suite('Time cards', () => {
         ]);
         assert.strictEqual(times['C:\\private\\same.ts'], 90_000);
         assert.ok(!JSON.stringify(card).includes('private'));
+        const collision = (0, timeCard_1.createTimeCard)({ ...times, 'C:\\private\\same.ts (1)': 60_000 }, now);
+        assert.strictEqual(new Set(collision.files.map(file => file.name)).size, collision.files.length);
     });
     test('handles empty and zero-duration data without invalid bar widths', () => {
         const empty = (0, timeCard_1.createTimeCard)({}, now);

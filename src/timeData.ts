@@ -13,11 +13,11 @@ export interface DateRange {
 }
 
 export function isValidDate(value: string): boolean {
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+	if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000-')) {
 		return false;
 	}
 	const [year, month, day] = value.split('-').map(Number);
-	const date = new Date(Date.UTC(year, month - 1, day));
+	const date = new Date(`${value}T00:00:00Z`);
 	return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
@@ -43,22 +43,32 @@ export function durationMinutes(entry: TimeEntry): number | undefined {
 }
 
 export function addDays(value: string, days: number): string {
-	const [year, month, day] = value.split('-').map(Number);
-	const date = new Date(Date.UTC(year, month - 1, day + days));
+	if (!isValidDate(value) || !Number.isSafeInteger(days)) {
+		throw new RangeError('Enter a valid calendar date and day offset.');
+	}
+	const date = new Date(`${value}T00:00:00Z`);
+	date.setUTCDate(date.getUTCDate() + days);
+	return dateString(date);
+}
+
+function dateString(date: Date): string {
+	if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() < 1 || date.getUTCFullYear() > 9999) {
+		throw new RangeError('Date is outside the supported four-digit calendar range.');
+	}
 	return date.toISOString().slice(0, 10);
 }
 
-function addCalendarMonth(value: string): string {
-	const [year, month, day] = value.split('-').map(Number);
-	const targetMonth = month;
-	const targetYear = year + Math.floor(targetMonth / 12);
-	const normalizedMonth = targetMonth % 12;
-	const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
-	return [targetYear, String(normalizedMonth + 1).padStart(2, '0'), String(Math.min(day, lastDay)).padStart(2, '0')].join('-');
-}
-
 export function customPeriodEnd(start: string): string {
-	return addDays(addCalendarMonth(start), -1);
+	if (!isValidDate(start)) {
+		throw new RangeError('Enter a valid period start date.');
+	}
+	const [year, month, day] = start.split('-').map(Number);
+	const date = new Date(`${start}T00:00:00Z`);
+	date.setUTCDate(1);
+	date.setUTCFullYear(year, month + 1, 0);
+	const lastDay = date.getUTCDate();
+	date.setUTCDate(Math.min(day, lastDay) - 1);
+	return dateString(date);
 }
 
 export function customPeriodRange(start: string): DateRange {
@@ -66,20 +76,26 @@ export function customPeriodRange(start: string): DateRange {
 }
 
 export function periodRange(kind: PeriodKind, selectedDate: string): DateRange {
+	if (!isValidDate(selectedDate)) {
+		throw new RangeError('Enter a valid summary date.');
+	}
 	if (kind === 'daily') {
 		return { start: selectedDate, end: selectedDate };
 	}
 	if (kind === 'weekly') {
-		const [year, month, day] = selectedDate.split('-').map(Number);
-		const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+		const weekday = new Date(`${selectedDate}T00:00:00Z`).getUTCDay();
 		const mondayOffset = (weekday + 6) % 7;
 		const start = addDays(selectedDate, -mondayOffset);
 		return { start, end: addDays(start, 6) };
 	}
 	if (kind === 'monthly') {
-		return { start: selectedDate.slice(0, 7) + '-01', end: addDays(addCalendarMonth(selectedDate.slice(0, 7) + '-01'), -1) };
+		const start = selectedDate.slice(0, 7) + '-01';
+		return { start, end: customPeriodEnd(start) };
 	}
-	return { start: selectedDate.slice(0, 4) + '-01-01', end: selectedDate.slice(0, 4) + '-12-31' };
+	if (kind === 'yearly') {
+		return { start: selectedDate.slice(0, 4) + '-01-01', end: selectedDate.slice(0, 4) + '-12-31' };
+	}
+	throw new RangeError('Enter a valid summary period.');
 }
 
 export function validateEntry(entry: TimeEntry): string | undefined {
@@ -107,5 +123,5 @@ export function formatDuration(minutes: number): string {
 }
 
 export function localDateString(date = new Date()): string {
-	return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+	return [String(date.getFullYear()).padStart(4, '0'), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
 }

@@ -45,6 +45,11 @@ suite('Extension Test Suite', () => {
     test('opens the timesheet command', async () => {
         await vscode.commands.executeCommand('time-tracker.openTimesheet');
     });
+    test('opens, reuses, and hides the floating timer through VS Code commands', async () => {
+        await vscode.commands.executeCommand('time-tracker.showFloatingTimer');
+        await vscode.commands.executeCommand('time-tracker.showFloatingTimer');
+        await vscode.commands.executeCommand('time-tracker.hideFloatingTimer');
+    });
     test('validates calendar dates and 24-hour times', () => {
         assert.strictEqual((0, timeData_1.isValidDate)('2024-02-29'), true);
         assert.strictEqual((0, timeData_1.isValidDate)('2025-02-29'), false);
@@ -86,22 +91,71 @@ suite('Extension Test Suite', () => {
         assert.deepStrictEqual(tracker.snapshot(), {
             fileTimes: { 'C:\\work\\first.ts': 90_000, 'C:\\work\\second.ts': 60_000 },
             activeFile: 'C:\\work\\second.ts',
+            paused: false,
         });
         assert.deepStrictEqual(saved, tracker.snapshot().fileTimes);
         const restored = new fileTimeTracker_1.FileTimeTracker(saved, async () => { }, () => now);
         assert.deepStrictEqual(restored.snapshot(), {
             fileTimes: saved,
             activeFile: null,
+            paused: false,
         });
     });
-    test('ignores malformed persisted file totals', () => {
-        assert.deepStrictEqual((0, fileTimeTracker_1.parseFileTimeTotals)({
+    test('pause saves elapsed time, excludes paused time, and resumes the latest active file', async () => {
+        let now = 1000;
+        let saved = {};
+        const tracker = new fileTimeTracker_1.FileTimeTracker({}, async (totals) => { saved = totals; }, () => now);
+        await tracker.setActiveFile('first.ts');
+        now += 1500;
+        await tracker.setPaused(true);
+        assert.strictEqual(saved['first.ts'], 1500);
+        now += 5000;
+        await tracker.checkpoint();
+        await tracker.setActiveFile('second.ts');
+        now += 5000;
+        await tracker.setPaused(true);
+        assert.strictEqual(tracker.snapshot().fileTimes['first.ts'], 1500);
+        assert.strictEqual(tracker.snapshot().activeFile, 'second.ts');
+        await tracker.setPaused(false);
+        now += 2500;
+        assert.strictEqual(tracker.snapshot().fileTimes['second.ts'], 2500);
+        await tracker.setPaused(false);
+        now += 500;
+        assert.strictEqual(tracker.snapshot().fileTimes['second.ts'], 3000);
+        await tracker.setActiveFile(undefined);
+        now += 5000;
+        await tracker.setPaused(true);
+        await tracker.setPaused(false);
+        now += 5000;
+        assert.strictEqual(tracker.snapshot().fileTimes['second.ts'], 3000);
+        assert.strictEqual(tracker.snapshot().activeFile, null);
+    });
+    test('failed pause persistence surfaces the error and the next write can recover without losing time', async () => {
+        let now = 0;
+        let fail = false;
+        let saved = {};
+        const tracker = new fileTimeTracker_1.FileTimeTracker({}, async (totals) => {
+            if (fail) {
+                throw new Error('Storage unavailable');
+            }
+            saved = totals;
+        }, () => now);
+        await tracker.setActiveFile('first.ts');
+        now = 1500;
+        fail = true;
+        await assert.rejects(tracker.setPaused(true), /Storage unavailable/);
+        assert.strictEqual(tracker.snapshot().paused, true);
+        fail = false;
+        now = 5000;
+        await tracker.checkpoint();
+        assert.strictEqual(saved['first.ts'], 1500);
+    });
+    test('rejects malformed persisted file totals without discarding valid records', () => {
+        assert.throws(() => (0, fileTimeTracker_1.parseFileTimeTotals)({
             'C:\\work\\valid.ts': 1200,
             'C:\\work\\negative.ts': -1,
-            'C:\\work\\string.ts': '500',
-            'C:\\work\\infinite.ts': Infinity,
-        }), { 'C:\\work\\valid.ts': 1200 });
-        assert.deepStrictEqual((0, fileTimeTracker_1.parseFileTimeTotals)([]), {});
+        }), /Invalid stored file time data/);
+        assert.throws(() => (0, fileTimeTracker_1.parseFileTimeTotals)([]), /Invalid stored file time data/);
     });
     test('renders the custom period as a PDF document', async () => {
         const pdf = await (0, pdfReport_1.renderReportPdf)({

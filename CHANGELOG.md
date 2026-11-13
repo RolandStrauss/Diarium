@@ -6,6 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+- Add a reusable floating timer panel with live second-level totals and show/hide controls.
+- Pause and resume the existing automatic tracker without losing partial elapsed time or counting
+  paused intervals; keep manual pause across file and focus changes.
+- Use shared snapshots and totals for the timer and status bar, with no per-second storage writes.
 - Add file-activity time-card previews with gradients, reduced-motion-aware animations,
   and standalone HTML or paginated PDF export.
 - Include every tracked file in cards, escape file names, omit directory paths, and handle empty totals.

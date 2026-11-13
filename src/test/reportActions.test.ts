@@ -1,9 +1,20 @@
 import * as assert from 'node:assert';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { runInNewContext } from 'node:vm';
+import type { TimeEntry } from '../timeData';
+
+interface TestMessage {
+	type: string;
+	format?: string;
+	entry?: TimeEntry;
+	expected?: TimeEntry | null;
+	date?: string;
+	value?: string;
+	view?: 'entries' | 'report';
+}
 
 suite('Report actions', () => {
 	let directory: string;
@@ -17,14 +28,27 @@ suite('Report actions', () => {
 	});
 
 	async function openTracker(action: string | undefined, openExternal: () => Promise<boolean> = async () => true,
-		options: { card?: boolean; cancelSave?: boolean; failSave?: boolean } = {}) {
+		options: {
+			card?: boolean; timer?: boolean; cancelSave?: boolean; failSave?: boolean;
+			expectLoadFailure?: boolean; chooseExclusion?: boolean; confirmReset?: boolean;
+		} = {}) {
 		const commands = new Map<string, () => Promise<void>>();
-		let receiveMessage: ((message: { type: string; format?: string }) => Promise<void>) | undefined;
+		let receiveMessage: ((message: TestMessage) => Promise<void>) | undefined;
 		let html = '';
 		const opened: { fsPath: string }[] = [];
 		const errors: string[] = [];
 		const information: string[] = [];
-		const messages: { type: string }[] = [];
+		const messages: { type: string; message?: string; totalTime?: string; currentTime?: string; currentFile?: string; paused?: boolean; status?: string }[] = [];
+		const intervals = new Map<number, { callback: () => void; milliseconds: number }>();
+		let nextInterval = 0;
+		let now = Date.now();
+		let panelsCreated = 0;
+		let reveals = 0;
+		let writes = 0;
+		const activityWrites: unknown[] = [];
+		let failPersistence = false;
+		let editorChanged: (() => void) | undefined;
+		let focusChanged: (() => void) | undefined;
 		let saveDialogs = 0;
 		const statusBarItems: { text: string; tooltip: string; command: string; show: () => void; dispose: () => void }[] = [];
 		const api = {
@@ -32,7 +56,7 @@ suite('Report actions', () => {
 				registerCommand: (id: string, callback: () => Promise<void>) => { commands.set(id, callback); },
 				executeCommand: async (id: string) => commands.get(id)?.(),
 			},
-			ViewColumn: { One: 1 },
+			ViewColumn: { One: 1, Beside: 2 },
 			StatusBarAlignment: { Right: 2 },
 			Uri: {
 				file: (fsPath: string) => ({ fsPath }),
@@ -54,20 +78,33 @@ suite('Report actions', () => {
 					return item;
 				},
 				createWebviewPanel: () => {
+					panelsCreated++;
+					let disposed = false;
+					const disposalListeners: (() => void)[] = [];
 					return {
+						viewColumn: 2,
+						reveal: () => { reveals++; },
 						webview: {
 							set html(value: string) { html = value; },
 							cspSource: 'test',
 							postMessage: async (message: { type: string }) => { messages.push(message); return true; },
-							onDidReceiveMessage: (callback: typeof receiveMessage) => { receiveMessage = callback; },
+							onDidReceiveMessage: (callback: typeof receiveMessage) => {
+								receiveMessage = callback;
+								return { dispose: () => {} };
+							},
 						},
-						onDidDispose: () => ({ dispose: () => {} }),
-						dispose: () => {},
+						onDidChangeViewState: () => ({ dispose: () => {} }),
+						onDidDispose: (callback: () => void) => { disposalListeners.push(callback); return { dispose: () => {} }; },
+						dispose: () => {
+							if (!disposed) { disposed = true; disposalListeners.forEach(callback => callback()); }
+						},
 					};
 				},
-				onDidChangeActiveTextEditor: () => ({ dispose: () => {} }),
-				onDidChangeWindowState: () => ({ dispose: () => {} }),
-				showQuickPick: async () => action ? { value: action } : undefined,
+				onDidChangeActiveTextEditor: (callback: () => void) => { editorChanged = callback; return { dispose: () => {} }; },
+				onDidChangeWindowState: (callback: () => void) => { focusChanged = callback; return { dispose: () => {} }; },
+				showQuickPick: async (items: { file?: string }[]) => options.chooseExclusion
+					? items[0] : action ? { value: action } : undefined,
+				showWarningMessage: async () => options.confirmReset ? 'Reset' : undefined,
 				showSaveDialog: async () => {
 					saveDialogs++;
 					return options.cancelSave ? undefined : { fsPath: path.join(directory,
@@ -83,7 +120,11 @@ suite('Report actions', () => {
 				get: (key: string) => key === 'time-tracker.file-times'
 					? { 'C:\\work\\first.ts': 3_600_000, 'C:\\work\\second.ts': 1_800_000 }
 					: undefined,
-				update: async () => {},
+				update: async (key: string, value: unknown) => {
+					writes++;
+					if (failPersistence) { throw new Error('Storage unavailable'); }
+					if (key === 'time-tracker.file-activity') { activityWrites.push(value); }
+				},
 			},
 			subscriptions: [],
 		};
@@ -93,20 +134,138 @@ suite('Report actions', () => {
 		runInNewContext(await readFile(filename, 'utf8'), {
 			module,
 			exports: module.exports,
-			require: (id: string) => id === 'vscode' ? api : realRequire(id),
+			require: (id: string) => id === 'vscode' ? api
+				: id === 'node:perf_hooks' ? { performance: { now: () => now } } : realRequire(id),
 			process, Buffer, console,
-			setInterval: () => 1,
-			clearInterval: () => {},
+			Date: class extends Date { static override now() { return now; } },
+			setInterval: (callback: () => void, milliseconds: number) => {
+				const id = ++nextInterval;
+				intervals.set(id, { callback, milliseconds });
+				return id;
+			},
+			clearInterval: (id: number) => intervals.delete(id),
 		}, { filename });
 		module.exports.activate(context);
-		const openCommand = commands.get(options.card ? 'time-tracker.openTimeCard' : 'time-tracker.openTimesheet');
+		const openCommand = commands.get(options.timer ? 'time-tracker.showFloatingTimer'
+			: options.card ? 'time-tracker.openTimeCard' : 'time-tracker.openTimesheet');
 		assert.ok(openCommand);
 		await openCommand();
-		assert.ok(receiveMessage);
-		await receiveMessage({ type: 'requestReportAction' });
-		return { opened, errors, information, messages, saveDialogs, receiveMessage, statusBarItems,
-			getHtml: () => html, getReceiver: () => receiveMessage! };
+		if (!options.expectLoadFailure) {
+			assert.ok(receiveMessage);
+			await receiveMessage({ type: 'requestReportAction' });
+		}
+		const receiver = receiveMessage ?? (async () => { throw new Error('No webview receiver registered'); });
+		return { opened, errors, information, messages, saveDialogs, receiveMessage: receiver, statusBarItems,
+			getHtml: () => html, getReceiver: () => receiveMessage!,
+			commands, intervals, api, context, activityWrites,
+			getPanelCount: () => panelsCreated, getReveals: () => reveals, getWrites: () => writes,
+			failPersistence: () => { failPersistence = true; },
+			advance: (milliseconds: number) => { now += milliseconds; },
+			tick: () => { for (const interval of intervals.values()) { if (interval.milliseconds === 1000) { interval.callback(); } } },
+			editorChanged: () => editorChanged!(), focusChanged: () => focusChanged!(),
+		};
 	}
+
+	test('floating timer updates live seconds without extra writes and reuses, hides, and recreates its panel', async () => {
+		const result = await openTracker(undefined, undefined, { timer: true });
+		await result.receiveMessage({ type: 'ready' });
+		assert.strictEqual(result.messages.at(-1)?.totalTime, '01:30:00');
+		assert.strictEqual(result.messages.at(-1)?.currentTime, '01:00:00');
+		const writes = result.getWrites();
+		result.advance(1500);
+		result.tick();
+		assert.strictEqual(result.messages.at(-1)?.totalTime, '01:30:01');
+		assert.strictEqual(result.messages.at(-1)?.currentTime, '01:00:01');
+		assert.strictEqual(result.messages.at(-1)?.currentFile, 'first.ts');
+		assert.strictEqual(result.getWrites(), writes);
+		await result.commands.get('time-tracker.showFloatingTimer')!();
+		assert.strictEqual(result.getPanelCount(), 1);
+		assert.strictEqual(result.getReveals(), 1);
+		await result.receiveMessage({ type: 'hide' });
+		assert.strictEqual(result.intervals.size, 2, 'The display refresh and minute checkpoint remain after hiding');
+		result.advance(2000);
+		await result.commands.get('time-tracker.showFloatingTimer')!();
+		await result.getReceiver()({ type: 'ready' });
+		assert.strictEqual(result.getPanelCount(), 2);
+		assert.strictEqual(result.messages.at(-1)?.currentTime, '01:00:03', 'Hiding must not pause tracking');
+		await result.commands.get('time-tracker.hideFloatingTimer')!();
+		await result.commands.get('time-tracker.hideFloatingTimer')!();
+		assert.strictEqual(result.intervals.size, 2);
+	});
+
+	test('timer pause preserves partial seconds, survives file and focus changes, and resumes the latest file', async () => {
+		const result = await openTracker(undefined, undefined, { timer: true });
+		result.advance(1500);
+		await result.receiveMessage({ type: 'toggleTracking' });
+		assert.strictEqual(result.messages.at(-1)?.paused, true);
+		assert.match(result.statusBarItems[0].text, /\$\(debug-pause\)/);
+		result.advance(10_000);
+		result.api.window.activeTextEditor.document.uri.fsPath = 'C:\\work\\second.ts';
+		result.editorChanged();
+		result.tick();
+		assert.strictEqual(result.messages.at(-1)?.currentTime, '00:30:00');
+		assert.strictEqual(result.messages.at(-1)?.paused, true);
+		result.api.window.state.focused = false;
+		result.focusChanged();
+		await result.commands.get('time-tracker.toggleTracking')!();
+		result.advance(5000);
+		result.tick();
+		assert.strictEqual(result.messages.at(-1)?.totalTime, '01:30:01');
+		assert.strictEqual(result.messages.at(-1)?.status, 'Waiting for a focused local file');
+		result.api.window.state.focused = true;
+		result.focusChanged();
+		result.advance(1500);
+		result.tick();
+		assert.strictEqual(result.messages.at(-1)?.currentTime, '00:30:01');
+		assert.strictEqual(result.messages.at(-1)?.totalTime, '01:30:03');
+		for (const disposable of result.context.subscriptions as { dispose?: () => void }[]) {
+			disposable?.dispose?.();
+		}
+		assert.strictEqual(result.intervals.size, 0, 'Extension disposal clears both intervals');
+	});
+
+	test('pause write failures notify the user while keeping the timer paused', async () => {
+		const result = await openTracker(undefined, undefined, { timer: true });
+		result.failPersistence();
+		await result.receiveMessage({ type: 'toggleTracking' });
+		assert.match(result.errors[0], /Could not save automatic file time data: .*Storage unavailable/);
+		assert.strictEqual(result.messages.at(-1)?.paused, true);
+		result.advance(5000);
+		result.tick();
+		assert.strictEqual(result.messages.at(-1)?.currentTime, '01:00:00');
+	});
+
+	test('exclusion settles time, persists its exact path, and reinclusion starts a fresh interval', async () => {
+		const result = await openTracker(undefined, undefined, { timer: true, chooseExclusion: true });
+		result.advance(1500);
+		await result.commands.get('time-tracker.manageExclusions')!();
+		assert.match(result.statusBarItems[0].text, /Excluded/);
+		const excluded = result.activityWrites.at(-1) as { excludedFiles: string[]; fileTimes: Record<string, number> };
+		assert.strictEqual(excluded.excludedFiles[0], 'C:\\work\\first.ts');
+		assert.strictEqual(excluded.fileTimes['C:\\work\\first.ts'], 3_601_500);
+		result.advance(5000);
+		result.tick();
+		assert.strictEqual(result.messages.at(-1)?.status, 'Excluded');
+		await result.commands.get('time-tracker.manageExclusions')!();
+		result.advance(2000);
+		result.tick();
+		assert.strictEqual(result.messages.at(-1)?.currentTime, '01:00:03');
+	});
+
+	test('reset requires confirmation and leaves exclusions separate from file totals', async () => {
+		const options = { timer: true, chooseExclusion: true, confirmReset: false };
+		const result = await openTracker(undefined, undefined, options);
+		await result.commands.get('time-tracker.manageExclusions')!();
+		const writes = result.activityWrites.length;
+		await result.commands.get('time-tracker.resetFileTimes')!();
+		assert.strictEqual(result.activityWrites.length, writes);
+		options.confirmReset = true;
+		await result.commands.get('time-tracker.resetFileTimes')!();
+		const reset = result.activityWrites.at(-1) as { excludedFiles: string[]; fileTimes: Record<string, number> };
+		assert.strictEqual(reset.excludedFiles[0], 'C:\\work\\first.ts');
+		assert.strictEqual(Object.keys(reset.fileTimes).length, 0);
+		assert.ok(result.information.some(message => /activity was reset/i.test(message)));
+	});
 
 	test('status bar shows total and active-file time and targets open command', async () => {
 		const result = await openTracker(undefined);
@@ -116,6 +275,47 @@ suite('Report actions', () => {
 		assert.match(statusBarItem.tooltip, /Total tracked: 1h 30m/);
 		assert.match(statusBarItem.tooltip, /Current file \(first\.ts\): 1h 00m/);
 		assert.strictEqual(statusBarItem.command, 'time-tracker.openTimesheet');
+	});
+
+	test('concurrent panels reject stale edits without overwriting the saved entry', async () => {
+		const result = await openTracker(undefined);
+		const first = result.receiveMessage;
+		await result.commands.get('time-tracker.openTimesheet')!();
+		const second = result.getReceiver();
+		const entry = { date: '2026-11-01', task: 'Original', timeIn: '09:00', timeOut: '10:00' };
+		await first({ type: 'createEntry', entry });
+		await second({ type: 'saveEntry', entry: { ...entry, task: 'Stale' }, expected: null });
+		assert.match(result.messages.at(-1)?.message ?? '', /changed in another view/);
+		await first({ type: 'saveEntry', entry: { ...entry, task: 'Updated' }, expected: entry });
+		const state = JSON.parse(await readFile(path.join(directory, 'timesheet.json'), 'utf8'));
+		assert.strictEqual(state.entries[entry.date].task, 'Updated');
+	});
+
+	test('a failed timesheet write leaves prior data intact and allows retry', async () => {
+		const result = await openTracker(undefined);
+		const stateFile = path.join(directory, 'timesheet.json');
+		const backup = path.join(directory, 'timesheet.backup.json');
+		await rename(stateFile, backup);
+		await mkdir(stateFile);
+		const entry = { date: '2026-11-01', task: 'Work', timeIn: '09:00', timeOut: '10:00' };
+		await result.receiveMessage({ type: 'createEntry', entry });
+		assert.strictEqual(result.messages.at(-1)?.type, 'error');
+		assert.deepStrictEqual(JSON.parse(await readFile(backup, 'utf8')).entries, {});
+		await rm(stateFile, { recursive: true });
+		await rename(backup, stateFile);
+		await result.receiveMessage({ type: 'createEntry', entry });
+		assert.strictEqual(JSON.parse(await readFile(stateFile, 'utf8')).entries[entry.date].task, 'Work');
+	});
+
+	test('invalid stored entries are reported without rewriting the timesheet', async () => {
+		const file = path.join(directory, 'timesheet.json');
+		const contents = JSON.stringify({ entries: { '2026-02-30': {
+			date: '2026-02-30', task: 'Work', timeIn: '09:00', timeOut: '10:00',
+		} }, periodStart: '2026-10-21', hourlyRate: null });
+		await writeFile(file, contents);
+		const result = await openTracker(undefined, undefined, { expectLoadFailure: true });
+		assert.match(result.errors[0], /saved entry.*invalid/i);
+		assert.strictEqual(await readFile(file, 'utf8'), contents);
 	});
 
 	test('Print opens a generated PDF outside the webview without a Save dialog', async () => {

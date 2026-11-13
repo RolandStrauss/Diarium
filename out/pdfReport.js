@@ -8,12 +8,14 @@ const pdfkit_1 = __importDefault(require("pdfkit"));
 const timeData_1 = require("./timeData");
 function displayDate(value) {
     const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(0);
+    date.setUTCFullYear(year, month - 1, day);
     return new Intl.DateTimeFormat('en', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
         timeZone: 'UTC',
-    }).format(new Date(Date.UTC(year, month - 1, day)));
+    }).format(date);
 }
 function displayDay(value) {
     const date = new Date(`${value}T00:00:00Z`);
@@ -22,6 +24,22 @@ function displayDay(value) {
 }
 function renderReportPdf(data) {
     return new Promise((resolve, reject) => {
+        if (!(0, timeData_1.isValidDate)(data.periodStart)) {
+            throw new Error('Cannot generate PDF: invalid period start date.');
+        }
+        if (data.hourlyRate !== null && (!Number.isFinite(data.hourlyRate) || data.hourlyRate < 0)) {
+            throw new Error('Cannot generate PDF: hourly rate must be finite and non-negative.');
+        }
+        let end;
+        try {
+            end = (0, timeData_1.customPeriodEnd)(data.periodStart);
+        }
+        catch {
+            throw new Error('Cannot generate PDF: period end is outside the supported calendar.');
+        }
+        if (!(0, timeData_1.isValidDate)(end) || end < data.periodStart) {
+            throw new Error('Cannot generate PDF: period end is outside the supported calendar.');
+        }
         const document = new pdfkit_1.default({
             layout: 'landscape',
             size: 'A4',
@@ -32,36 +50,42 @@ function renderReportPdf(data) {
         document.on('data', (chunk) => chunks.push(chunk));
         document.on('error', reject);
         document.on('end', () => resolve(Buffer.concat(chunks)));
-        const start = data.periodStart;
-        const end = (0, timeData_1.customPeriodEnd)(start);
         const pageWidth = document.page.width - document.page.margins.left - document.page.margins.right;
-        const columnWidths = [70, 94, pageWidth - 70 - 94 - 58 - 58 - 82, 58, 58, 82];
-        const rowHeight = 14;
-        let y = document.page.margins.top;
-        document.font('Helvetica-Bold').fontSize(14).fillColor('#202020')
-            .text('Time Tracker', document.page.margins.left, y);
-        y += 20;
-        document.font('Helvetica').fontSize(9).fillColor('#333333')
-            .text(`Reporting period: ${displayDate(start)} to ${displayDate(end)}`, document.page.margins.left, y);
-        y += 16;
-        const headers = ['Date', 'Day', 'Task', 'Time In', 'Time Out', 'Duration'];
-        const drawRow = (values, fill, bold = false) => {
-            let x = document.page.margins.left;
-            document.rect(x, y, pageWidth, rowHeight).fill(fill);
-            for (let index = 0; index < values.length; index++) {
-                const width = columnWidths[index];
-                document.rect(x, y, width, rowHeight).lineWidth(0.35).stroke('#999999');
-                document.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5).fillColor('#222222')
-                    .text(values[index], x + 4, y + 3, { width: width - 8, height: rowHeight - 4, ellipsis: true, lineBreak: false });
-                x += width;
-            }
-            y += rowHeight;
-        };
-        drawRow(headers, '#dddddd', true);
+        const columnWidths = [70, 80, pageWidth - 70 - 80 - 48 - 48 - 70, 48, 48, 70];
+        const padding = 3;
+        document.font('Helvetica').fontSize(7.5);
+        const lineHeight = document.currentLineHeight(true);
+        const rowPadding = 2;
+        const rows = [];
         let totalMinutes = 0;
         let daysLogged = 0;
-        for (let date = start; date <= end; date = (0, timeData_1.addDays)(date, 1)) {
+        for (let date = data.periodStart;; date = (0, timeData_1.addDays)(date, 1)) {
             const entry = data.entries[date] ?? { date, task: '', timeIn: '', timeOut: '' };
+            if (data.entries[date]) {
+                const error = (0, timeData_1.validateEntry)(entry);
+                if (entry.date !== date || error) {
+                    throw new Error(`Cannot generate PDF: invalid entry for ${date}. ${error ?? 'Entry date does not match.'}`);
+                }
+            }
+            // PDFKit's built-in Helvetica substitutes non-ASCII characters, so reject them instead.
+            if (/[^\x20-\x7e]/.test(entry.task)) {
+                throw new Error(`Cannot generate PDF: task for ${date} contains unsupported characters; only printable ASCII is supported.`);
+            }
+            const taskLines = [];
+            let line = '';
+            for (const character of entry.task) {
+                if (document.widthOfString(line + character) > columnWidths[2] - padding * 2) {
+                    if (!line) {
+                        throw new Error(`Cannot generate PDF: task for ${date} cannot fit in the task column.`);
+                    }
+                    taskLines.push(line);
+                    line = '';
+                }
+                line += character;
+            }
+            if (line || !taskLines.length) {
+                taskLines.push(line);
+            }
             const minutes = (0, timeData_1.durationMinutes)(entry);
             const incomplete = Boolean(entry.timeIn) !== Boolean(entry.timeOut);
             if (minutes !== undefined) {
@@ -69,26 +93,91 @@ function renderReportPdf(data) {
                 daysLogged++;
             }
             const weekend = new Date(`${date}T00:00:00Z`).getUTCDay() % 6 === 0;
-            drawRow([
-                displayDate(date),
-                displayDay(date),
-                entry.task,
-                entry.timeIn,
-                entry.timeOut,
-                minutes === undefined ? (incomplete ? 'INCOMPLETE' : '') : (0, timeData_1.formatDuration)(minutes),
-            ], incomplete ? '#fff2cc' : weekend ? '#eeeeee' : '#ffffff');
+            rows.push({
+                values: [displayDate(date), displayDay(date), entry.task, entry.timeIn, entry.timeOut,
+                    minutes === undefined ? (incomplete ? 'INCOMPLETE' : '') : (0, timeData_1.formatDuration)(minutes)],
+                taskLines,
+                height: taskLines.length * lineHeight + rowPadding,
+                fill: incomplete ? '#fff2cc' : weekend ? '#eeeeee' : '#ffffff',
+            });
+            if (date === end) {
+                break;
+            }
+        }
+        const estimate = data.hourlyRate === null ? null : totalMinutes / 60 * data.hourlyRate;
+        if (estimate !== null && (!Number.isFinite(estimate) || estimate >= 1e21)) {
+            throw new Error('Cannot generate PDF: estimated value is too large to display to two decimal places.');
+        }
+        const summary = `Total hours: ${(0, timeData_1.formatDuration)(totalMinutes)}     Days logged: ${daysLogged}`;
+        const rate = estimate === null ? null : `Hourly rate: ${data.hourlyRate}     Estimated value (informational): ${estimate.toFixed(2)}`;
+        const footer = `Generated ${displayDate(new Date().toISOString().slice(0, 10))}. Weekend and incomplete entries are labeled.`;
+        const headers = ['Date', 'Day', 'Task', 'Time In', 'Time Out', 'Duration'];
+        const period = `Reporting period: ${displayDate(data.periodStart)} to ${displayDate(end)}`;
+        const headerHeight = lineHeight + rowPadding;
+        const requiredHeight = 20 + 16 + headerHeight + rows.reduce((sum, row) => sum + row.height, 0)
+            + 8 + 14 + (rate === null ? 0 : 14) + lineHeight;
+        if (requiredHeight > document.page.height - document.page.margins.top - document.page.margins.bottom) {
+            throw new Error('Cannot generate PDF: all task content does not fit on one landscape A4 page at 7.5-point type.');
+        }
+        document.font('Helvetica-Bold').fontSize(7.5);
+        if (headers.some((value, index) => document.widthOfString(value) > columnWidths[index] - padding * 2)) {
+            throw new Error('Cannot generate PDF: a column heading does not fit.');
+        }
+        document.font('Helvetica').fontSize(7.5);
+        for (const row of rows) {
+            if (row.values.some((value, index) => index !== 2 && document.widthOfString(value) > columnWidths[index] - padding * 2)) {
+                throw new Error('Cannot generate PDF: a report value does not fit in its column.');
+            }
+        }
+        if ((rate !== null && document.widthOfString(rate) > pageWidth) || document.widthOfString(footer) > pageWidth) {
+            throw new Error('Cannot generate PDF: report summary does not fit on one page.');
+        }
+        document.font('Helvetica-Bold').fontSize(9);
+        if (document.widthOfString(summary) > pageWidth) {
+            throw new Error('Cannot generate PDF: report summary does not fit on one page.');
+        }
+        document.font('Helvetica').fontSize(9);
+        if (document.widthOfString(period) > pageWidth) {
+            throw new Error('Cannot generate PDF: period does not fit on one page.');
+        }
+        let y = document.page.margins.top;
+        const left = document.page.margins.left;
+        document.font('Helvetica-Bold').fontSize(14).fillColor('#202020')
+            .text('Time Tracker', left, y, { lineBreak: false });
+        y += 20;
+        document.font('Helvetica').fontSize(9).fillColor('#333333')
+            .text(period, left, y, { lineBreak: false });
+        y += 16;
+        const drawRow = (values, taskLines, height, fill, bold = false) => {
+            let x = left;
+            document.rect(x, y, pageWidth, height).fill(fill);
+            for (let index = 0; index < values.length; index++) {
+                const width = columnWidths[index];
+                document.rect(x, y, width, height).lineWidth(0.35).stroke('#999999');
+                document.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5).fillColor('#222222');
+                const lines = index === 2 ? taskLines : [values[index]];
+                lines.forEach((text, lineIndex) => {
+                    document.text(text, x + padding, y + rowPadding / 2 + lineIndex * lineHeight, { lineBreak: false });
+                });
+                x += width;
+            }
+            y += height;
+        };
+        drawRow(headers, [headers[2]], headerHeight, '#dddddd', true);
+        for (const row of rows) {
+            drawRow(row.values, row.taskLines, row.height, row.fill);
         }
         y += 8;
         document.font('Helvetica-Bold').fontSize(9).fillColor('#202020')
-            .text(`Total hours: ${(0, timeData_1.formatDuration)(totalMinutes)}     Days logged: ${daysLogged}`, document.page.margins.left, y);
-        if (data.hourlyRate !== null) {
+            .text(summary, left, y, { lineBreak: false });
+        y += 14;
+        if (rate !== null) {
+            document.font('Helvetica').fontSize(7.5)
+                .text(rate, left, y, { lineBreak: false });
             y += 14;
-            document.font('Helvetica').fontSize(8)
-                .text(`Estimated value (informational): ${(totalMinutes / 60 * data.hourlyRate).toFixed(2)}`, document.page.margins.left, y);
         }
-        y += 15;
-        document.font('Helvetica').fontSize(7).fillColor('#555555')
-            .text(`Generated ${displayDate(new Date().toISOString().slice(0, 10))}. Weekend and incomplete entries are labeled.`, document.page.margins.left, y);
+        document.font('Helvetica').fontSize(7.5).fillColor('#555555')
+            .text(footer, left, y, { lineBreak: false });
         document.end();
     });
 }

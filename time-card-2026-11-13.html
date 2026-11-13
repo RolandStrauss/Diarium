@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none';">
+<title>Time Tracker - File activity card</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; padding: 32px 18px; background: #e8ede9; color: #f5fff7; font-family: 'Trebuchet MS', sans-serif; }
+.actions { max-width: 780px; margin: 0 auto 18px; display: flex; flex-wrap: wrap; gap: 10px; }
+button { font: inherit; background: #163e39; color: #fff; border: 0; border-radius: 6px; padding: 10px 16px; cursor: pointer; }
+button:hover { background: #245c50; }
+button:focus-visible { outline: 3px solid #a34b00; outline-offset: 3px; }
+.card { max-width: 780px; margin: auto; padding: clamp(24px, 5vw, 52px); border-radius: 22px; background: linear-gradient(135deg, #102d32, #1b5246 65%, #346447); box-shadow: 0 20px 60px #102d3233; animation: arrive .6s ease-out; }
+.eyebrow { text-transform: uppercase; letter-spacing: .2em; font-size: 11px; color: #c3e0ce; margin: 0 0 14px; }
+h1 { font: normal clamp(32px, 6vw, 52px) Georgia, serif; margin: 0 0 12px; }
+.date, .note { color: #d0e4d7; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.summary { display: flex; flex-wrap: wrap; gap: 32px; padding: 28px 0; margin: 24px 0; border-block: 1px solid #b4d1bc55; }
+.summary strong { display: block; font: normal clamp(28px, 5vw, 42px) Georgia, serif; font-variant-numeric: tabular-nums; color: #ffe1a6; }
+.summary span { display: block; margin-top: 8px; color: #d0e4d7; font-size: 13px; }
+ul { list-style: none; margin: 0; padding: 0; }
+.file-row { margin-bottom: 22px; break-inside: avoid; }
+.file-detail { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; margin-bottom: 9px; }
+.file-name { overflow-wrap: anywhere; min-width: 0; flex: 1 1 220px; }
+.file-time { white-space: nowrap; font-variant-numeric: tabular-nums; color: #ffe1a6; }
+small { color: #d0e4d7; margin-left: 8px; }
+.track { height: 7px; border-radius: 8px; background: #ffffff22; overflow: hidden; }
+.bar { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7edcbb, #ffcc7d); transform-origin: left; animation: grow .8s ease-out; }
+footer { border-top: 1px solid #b4d1bc55; margin-top: 30px; padding-top: 18px; }
+@keyframes arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .card, .bar { animation: none; } }
+@media print {
+ @page { size: A4; margin: 14mm; }
+ body { padding: 0; background: white; }
+ .actions { display: none; }
+ .card { max-width: none; border-radius: 0; box-shadow: none; padding: 20px; }
+ .card, .bar { animation: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+ h1, .summary, footer { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<main class="card">
+<p class="eyebrow">Time Tracker / File activity</p>
+<h1>Time well spent.</h1>
+<p class="date">Snapshot: <time datetime="2026-11-13T08:30:11.594Z">2026-11-13 08:30:11.594 UTC</time></p>
+<section class="summary" aria-label="Activity summary"><div><strong>0h 37m</strong><span>Total tracked time</span></div><div><strong>11</strong><span>Files tracked</span></div></section>
+<ul aria-label="Tracked files"><li class="file-row">
+<div class="file-detail"><span class="file-name">package.json</span>
+<span class="file-time">0h 30m <small>81.6%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:81.62622152469267%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">.gitignore</span>
+<span class="file-time">0h 01m <small>5.0%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:4.975793968603988%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">.vscodeignore</span>
+<span class="file-time">0h 01m <small>3.6%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:3.6239014807339385%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">timeCard.test.ts</span>
+<span class="file-time">0h 00m <small>2.1%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:2.1099919911795233%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">README.md</span>
+<span class="file-time">0h 00m <small>2.0%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:2.0050333461426573%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">reportActions.test.ts</span>
+<span class="file-time">0h 00m <small>1.6%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:1.557679668729327%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">extension.ts</span>
+<span class="file-time">0h 00m <small>1.4%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:1.3942261073181945%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">LICENSE</span>
+<span class="file-time">0h 00m <small>1.0%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:0.9546837234191557%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">timeCard.ts</span>
+<span class="file-time">0h 00m <small>0.9%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:0.8937646125059708%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">webview.ts</span>
+<span class="file-time">0h 00m <small>0.5%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:0.5115948326946628%"></div></div></li><li class="file-row">
+<div class="file-detail"><span class="file-name">SKILL.md</span>
+<span class="file-time">0h 00m <small>0.3%</small></span></div>
+<div class="track" aria-hidden="true"><div class="bar" style="width:0.34710874397991687%"></div></div></li></ul>
+<footer class="note">All-time file activity across workspaces, including idle time while focused. Not a timesheet or billable-hours report. Durations display whole minutes; shares use unrounded time. Only file names are included; repeated names are numbered. Review file names before sharing.</footer>
+</main>
+
+</body>
+</html>

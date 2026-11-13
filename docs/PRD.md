@@ -1,144 +1,361 @@
-# Product Requirements: Time Tracker
+## 1. Purpose and Evidence Boundary
 
-## 1. Overview
+This product requirements document (PRD) defines the current product and the requirements for a trustworthy
+release of Time Tracker, a Visual Studio Code (VS Code) extension. It consolidates the timesheet requirements
+with the relevant file-activity requirements from [the timer draft](timer_PRD.md).
 
-**Product:** Time Tracker, a timesheet tracking and logging extension for Visual Studio Code  
-**Status:** Draft  
-**Audience:** Individuals who need to record work hours and produce clear timesheet reports
+**Status:** Draft requirements with recommended product decisions. The working-tree source, including local
+changes, is the baseline; it is not evidence of an installed or published release. Baseline statements are
+static observations, not proof of runtime behavior. Requirements describe the desired release, including
+work not yet implemented. Evidence is indexed in section 13.
 
-Time Tracker lets a user record daily work, review totals over useful reporting periods, and print a compact monthly timesheet. Records are stored locally by the extension; the product does not require a service or account.
+The timer draft describes a different implementation and contains outdated paths, commands, dependencies,
+and test claims. Where it conflicts with the current source, this document preserves the current product's
+capabilities and treats the draft's additional requirements as proposed work, not existing behavior.
 
-## 2. Problem and goals
+## 2. Product Summary
 
-Users need a low-friction way to maintain accurate work-time records without leaving VS Code. A useful timesheet must handle overnight shifts, identify incomplete entries, calculate durations and totals consistently, and produce a readable report for a configurable 21st-to-20th reporting cycle.
+Time Tracker provides two separate, local-first experiences:
 
-### Goals
+- **Manual timesheet:** Record one task and time pair per date, review date-based totals, and produce a
+  configurable reporting-cycle PDF.
+- **Automatic file activity:** See cumulative time for selected local files while the VS Code window is focused,
+  including idle time. Review a shared timer snapshot and export a time card.
 
-- Create and maintain dated time entries with a task description and in/out times.
-- Calculate shift duration, hours, and entry counts automatically.
-- Support standard daily, weekly, monthly, and yearly views, as well as a configurable reporting cycle.
-- Make incomplete or invalid time entries easy to identify and correct.
-- Produce a one-page, print-friendly report for a reporting period.
-- Keep records available across VS Code restarts without requiring network access.
+File activity is an indicator of selected-file time, not evidence of active work, attendance, productivity,
+or billable hours. It must never be added automatically to manual timesheet entries. Neither experience requires
+an account or network service. [E1, E3, E4, E5]
 
-### Non-goals for the initial release
+## 3. Users and Goals
 
-- Cloud synchronization, accounts, team administration, or manager approval workflows.
-- Payroll, tax, invoicing, or compliance certification.
-- Automatic activity tracking, screenshots, or monitoring of user activity.
-- Calendar integrations or external time-clock integrations.
+The primary user is an individual using VS Code who wants to record work, review hours, understand file
+activity, and share a suitable report. These needs are inferred from the repository, not validated by research.
 
-## 3. Users and primary scenarios
+The product must:
 
-**Primary user:** An individual recording their own work time.
+- Make manual entry, correction, filtering, and period review straightforward.
+- Calculate and present durations consistently, including overnight and incomplete entries.
+- Keep automatic file totals explainable across file switches, focus changes, pauses, and restarts.
+- Preserve records locally and make errors, storage scope, and sharing implications clear.
+- Produce readable reports without accounts, network services, or unnecessary configuration.
 
-1. The user opens the Time Tracker view and records the date, task description, time in, and time out.
-2. The extension calculates the duration, including when a shift ends after midnight.
-3. The user filters records and reviews totals for a day, week, month, year, or reporting period.
-4. The user configures a period start date, checks the automatically calculated end date, and prints the period report.
-5. The user notices a highlighted partial entry, completes or corrects it, and sees the totals update.
+**Non-goals:** payroll, tax, invoicing, attendance or productivity scoring, screenshots, automatic idle detection,
+other-application monitoring, accounts, cloud synchronization, team approval, calendar integration, and a
+native always-on-top overlay. File-activity history is cumulative; daily, weekly, and monthly file-activity
+analytics are not in scope. User-facing import, synchronization, templates, and additional export formats are
+not required.
 
-## 4. Product requirements
+## 4. Current Product Baseline
 
-### 4.1 Timesheet entries
+These observations describe the active working-tree code, not verified release behavior. [E3-E8]
 
-Each entry contains:
+- **Discovery:** Startup activation and seven `time-tracker.*` commands are declared in the manifest.
+- **Timesheet:** A webview provides entries, date and task filters, calendar-year grid, summaries, and a report.
+- **Manual storage:** A JSON file in extension global storage holds entries and preferences. Older
+  `time-tracker.data` state is read when the file is absent.
+- **Reporting:** Print opens a locally generated landscape A4 PDF in an external viewer; another action saves PDF.
+- **File tracking:** Focused local files accrue elapsed time, including idle time. Pause, switches, focus,
+  checkpoints, and shutdown settle intervals.
+- **File storage:** Cumulative totals and exact-file exclusions share a versioned extension `globalState`
+  record across workspaces. Previous records remain available for recovery.
+- **Views:** Status bar opens the timesheet; File activity and the floating timer use file-tracker snapshots.
+  Exclusions and confirmed reset are available through Command Palette commands.
+- **Time cards:** The active card previews all files and exports standalone HTML or paginated PDF. Duplicate
+  names are numbered.
 
-- **Date:** The local calendar date on which the shift starts.
-- **Task description:** Free text describing the work.
-- **Time In:** Local time in 24-hour `HH:mm` format.
-- **Time Out:** Local time in 24-hour `HH:mm` format.
-- **Duration:** Automatically calculated elapsed time; read-only.
+The floating timer is a VS Code webview, not an operating-system overlay. Hide closes the panel without
+pausing; manual pause lasts for the extension session. Card timestamps are UTC; cards include file names,
+not directory paths. PDF card export currently rejects names outside printable ASCII and Latin-1. [E1, E4, E6]
 
-The entry list must provide 365 rows and filtering by date and task-description text. Empty rows are available for new records; saved records remain available when filtered. The initial product assumes one entry per date. If a user tries to create a second entry for the same date, the extension must explain the one-entry-per-date constraint rather than silently overwrite an entry.
+The unreferenced `ExcludeFiles`, `TimeTrackerProvider`, and `TimeCardGenerator` modules are not wired into the
+active entry point. Their old command names, Explorer view, and top-five card must not be described as active
+capabilities. The manifest currently declares version `0.1.1`, VS Code `^1.140.0`,
+and the `pdfkit` runtime dependency. [E3, E4, E9]
 
-The interface must show the total hours and the number of completed entries for the currently selected/filter-matched set. Totals must update when entries are added, edited, removed, or filtered. Incomplete entries do not contribute to duration or completed-entry totals.
+Current command identifiers are `time-tracker.openTimesheet`, `time-tracker.openTimeCard`,
+`time-tracker.showFloatingTimer`, `time-tracker.hideFloatingTimer`, and `time-tracker.toggleTracking`.
+The new commands are `time-tracker.manageExclusions` and `time-tracker.resetFileTimes`. Preserve these
+identifiers and the status-bar route to the timesheet.
 
-### 4.2 Duration and input validation
+## 5. Gaps That Affect Product Trust
 
-- Dates must be valid calendar dates.
-- Times must be valid 24-hour clock values from `00:00` through `23:59`.
-- A completed entry requires both Time In and Time Out.
-- If Time Out is earlier than Time In, interpret Time Out as occurring on the following calendar day. For example, `22:00` to `06:00` is 8 hours.
-- If Time Out equals Time In, calculate zero hours; do not assume a 24-hour shift.
-- Reject invalid values with a clear, field-specific message. Do not save invalid values or silently normalize them.
-- If exactly one time field is populated, mark the entry as incomplete and apply warning highlighting. Keep the entered value so the user can finish the entry.
-- If neither time field is populated, treat the row as a blank row, not as a warning.
-- Durations are elapsed time, displayed to the minute and summed without rounding individual entries to whole hours.
+The analysis identified defects in storage validation, failed writes, concurrent edits, exclusions, reset,
+display refresh, report clipping, and calendar boundaries. The working tree now contains repairs and focused
+tests for these areas. Full release confidence still requires the checks in sections 9 and 10. [E4-E9]
 
-### 4.3 Reporting periods
+- **Recovery:** Invalid saved data is reported without silently overwriting it. Raw file-activity data can be
+  exported for recovery. A stale ownership lock requires the documented manual recovery procedure.
+- **Concurrency:** A local ownership lock prevents multiple extension hosts from writing the shared stores.
+  Timesheet panels reject stale edits. Other windows remain unavailable until the owner exits and they reload.
+- **Legacy totals:** Older `fileTimers` data remains separate and is not automatically merged. Users must
+  reconcile its ownership and contents before relying on totals.
+- **Reports:** The one-page timesheet PDF rejects unsupported task characters or content that cannot fit.
+  Timesheet PDF tasks currently support printable ASCII only; the viewer controls physical print settings.
+- **Validation readiness:** Automated tests do not establish accessibility, cross-platform behavior, or release
+  readiness by themselves. The Playwright workflow references tooling absent from the manifest.
 
-Provide period views for:
+## 6. Scope and Priorities
 
-- **Daily:** One selected calendar date.
-- **Weekly:** The selected date's week, Monday through Sunday.
-- **Monthly:** The selected calendar month.
-- **Yearly:** The selected calendar year.
-- **Custom reporting cycle:** A user-configurable start date and automatically calculated end date.
+Both P0 and P1 are required for this proposed release. Priority determines sequence, not permission to omit work.
 
-The standard reporting cycle starts on the 21st of a month and ends on the 20th of the following month, inclusive. The initial configured **Period Start** is **21 October 2026** and its calculated **Period End** is **20 November 2026**.
+| Priority | Scope |
+| --- | --- |
+| P0 | Entry and timer correctness; non-destructive storage, concurrency, privacy, reset, and error handling. |
+| P1 | Filtering, summaries, accessible displays, exclusions, timesheet PDF, and file-activity card exports. |
 
-Period End is calculated as one calendar month after Period Start, minus one day. For example, a start date of 21 January results in an end date of 20 February; a start date of 21 December results in an end date of 20 January of the following year. The user may change Period Start; Period End is not independently editable.
+Preserve existing behavior unless a requirement below explicitly changes it. Do not add a service, account,
+new framework, or dependency merely to implement these requirements.
 
-The custom-cycle report must show:
+## 7. Functional Requirements
 
-- Automatically generated date and day-of-week columns for every date in the period, inclusive.
-- Editable Time In and Time Out fields for each date.
-- Automatically calculated daily duration.
-- Total hours for the reporting period.
-- Number of days logged (dates with complete, valid time pairs).
-- Weekend highlighting.
-- Warning highlighting on dates with exactly one of Time In or Time Out entered.
+Requirements apply to the release target. A baseline observation in section 4 does not itself satisfy them.
 
-### 4.4 Hourly rate
+### FR-01: Manual Entries
 
-The user can set an hourly rate for estimating the value of recorded time. Display the configured rate and a calculated estimate for the selected report period, calculated as total hours multiplied by the rate. The estimate is informational only and must not be presented as payroll or an invoice. The rate is optional; hide the estimate until a valid rate is configured.
+- Each saved entry has a valid local calendar date, a nonblank task description, and zero, one, or two
+  24-hour `HH:mm` times. The date is the shift's start date. Only one entry per date is allowed.
+- Creating a duplicate must explain the constraint and preserve the existing entry. Users can edit or delete
+  an entry; deleting a row or clearing its task and both times removes that entry.
+- A task-only entry is saved but has no duration and is not incomplete. A row with no task and no times is blank.
+  A time without a task is invalid and must remain available for correction rather than being saved.
+- Exactly one time makes an entry incomplete. Keep the entered value, label the row, and exclude it from
+  completed counts and totals. Two valid times make it complete, including a zero-duration pair.
+- Reject invalid dates and times with a field-specific message; do not silently normalize or save them.
+  Calculate minutes as wall-clock time: an earlier Time Out is on the next day; equal times mean zero,
+  not 24 hours. Do not adjust for daylight-saving transitions.
+- Display calculated duration as read-only hours and minutes. Sum integer minutes, without rounding each entry
+  to whole hours. Timesheet values are not a guarantee of actual elapsed time across clock changes.
 
-### 4.5 Print report
+### FR-02: Views, Filtering, and Periods
 
-The user can print the custom reporting-cycle report. The print layout must:
+- Show every date in the selected calendar year: 365 or 366 rows as appropriate. Never discard leap-day records.
+- Filter by exact date and case-insensitive task substring. With a task filter, search saved entries across
+  years; when both filters are set, apply both. With neither filter, show the selected year.
+- Show filtered hours and completed-entry count for the visible matching entries. Update them on edit, delete,
+  and filter changes. Daily, Monday-to-Sunday weekly, calendar-month, and calendar-year summaries use the
+  selected summary date and include both endpoints; they are independent of grid filters.
+- The custom period defaults to 21 October 2026 for new data. Its editable start determines its read-only end:
+  add one calendar month, clamping the day to the last day of the target month if needed, then subtract one day.
+  For example, 21 December 2026 ends on 20 January 2027, and 31 January 2026 ends on 27 February 2026.
+- Reject a start date if its calculated period cannot be represented as a four-digit calendar date.
+  Do not overwrite the last valid period on rejection.
+- The cycle report includes each inclusive date, day of week, task, editable times, daily duration, total hours,
+  and count of dates with complete valid pairs. Distinguish weekends and incomplete entries with text or
+  patterns as well as color.
 
-- Fit on one printed page using a compact, legible layout.
-- Include the period start and end, generated date/day columns, time in, time out, daily duration, total hours, and days logged.
-- Preserve weekend and incomplete-entry distinction in print, using labels or patterns as well as color so the report remains understandable in grayscale.
-- Omit application chrome and interactive controls.
-- Avoid clipping or dropping period dates. If the user's print settings make one-page output impossible, show a clear print-layout warning rather than silently omit content.
+### FR-03: Hourly Estimate and Timesheet PDF
 
-## 5. Data, persistence, and privacy
+- Show the configured optional, finite, non-negative hourly rate. Calculate `total minutes / 60 × rate`,
+  displayed to two decimal places as an informational estimate. A blank rate removes the estimate. No currency
+  is implied or displayed.
+- Print opens the generated PDF in the default viewer; the user starts printing in that viewer. Save as PDF
+  prompts for a destination. Cancellation writes nothing; errors are visible; success is reported only after
+  the file is written or the viewer is opened, respectively.
+- The report must fit on one landscape A4 PDF page for every supported cycle, without omitting or clipping dates,
+  times, durations, totals, or the estimate. It must include the task column, period boundaries, and days logged.
+  Use at least 7.5-point type and label weekends and incomplete entries in grayscale. Never silently truncate
+  or corrupt a task: if all content cannot fit or be represented on one page, explain the limitation and do not
+  claim a complete report.
+- The viewer and printer control paper size, scaling, and margins. Tell users to print the generated A4 page
+  at a suitable scale; do not promise to detect every external printer setting.
 
-- Store entries and preferences locally using VS Code extension storage.
-- Preserve records and configured preferences across extension and VS Code restarts.
-- Do not transmit timesheet data or hourly rate over the network.
-- A user can edit and delete their own records.
-- Dates and times represent local wall-clock values; no timezone conversion is performed.
-- Data export/import is not required for the initial release.
+### FR-04: Automatic File Tracking
 
-## 6. UX and accessibility requirements
+- After activation, track the selected local `file` editor only while its VS Code window is focused, tracking
+  is running, and the file is not excluded. Files outside workspace roots are eligible. Untitled and virtual
+  files are not. Idle time while focused counts; activity outside VS Code does not.
+- Start an eligible already-open file without requiring a switch. Settle the prior file exactly once on a
+  switch, loss of eligibility, pause, exclusion, reset, checkpoint, or orderly shutdown. Never attribute one
+  file's interval to another or count an interval twice.
+- A snapshot includes the current eligible interval once. Reopening starts a new interval and never counts
+  time while the extension was closed. Persist cumulative totals, not live timing anchors.
+- Pause and resume use one shared session state across the command and floating timer. Pausing settles time;
+  file and focus changes while paused cannot resume tracking. Resuming starts the currently eligible file
+  from the resume boundary, excluding the paused interval. Restart resets manual pause to running.
 
-- Provide a discoverable VS Code command to open the timesheet and a clear route to the report.
-- Make calculated fields visibly read-only and distinguishable from editable fields.
-- Associate validation and incomplete-entry warnings with the affected date/field; do not rely on color alone.
-- Support keyboard navigation and editing for all entry fields and report controls.
-- Use accessible labels for date, task, time, duration, filters, and totals.
-- Keep totals and current report-period boundaries visible while reviewing the corresponding entries.
+### FR-05: Exclusions and Reset
 
-## 7. Acceptance criteria
+- Provide exact-local-path exclusion and reinclusion through a discoverable control. Preserve historical totals
+  when excluding a file; settle the active interval before exclusion and start a fresh interval on reinclusion.
+  Persist exclusions across restarts and ordinary resets. Do not introduce glob patterns.
+- Distinguish duplicate basenames in the exclusion picker. Cancellation changes nothing; an attempt to exclude
+  without an eligible file explains why.
+- Provide an explicit, modal confirmation before resetting all automatic file totals in the shared store.
+  Cancellation changes nothing. Confirmation clears only automatic file totals, not exclusions, manual
+  timesheets, preferences, or existing exports. An eligible active file starts a new zero-based interval.
+- Reset must not report success until persistence succeeds. On failure, report the error and retain or recover
+  the prior durable data. Never silently include unresolved legacy records in a reset.
 
-1. A user can create, edit, and delete a valid dated entry with a task description and both times; the record remains after restarting VS Code.
-2. Duration for `09:00`–`17:30` is 8 hours 30 minutes; duration for `22:00`–`06:00` is 8 hours.
-3. Equal in/out times produce a zero duration. Invalid dates and times cannot be saved.
-4. A row with only one time value receives warning highlighting and is excluded from completed hours and days/entry counts; a blank row is not warned.
-5. The list offers 365 entry rows and filters by date and task text; totals and entry counts reflect the filtered records.
-6. Daily, Monday-to-Sunday weekly, calendar-month, and calendar-year views calculate totals over their respective inclusive date ranges.
-7. With Period Start set to 21 October 2026, Period End is 20 November 2026. Changing the start date recalculates the end date using the defined calendar-month rule.
-8. The custom-cycle report contains a row for every date in the inclusive period, correct day names, weekend styling, daily durations, period total hours, and days logged.
-9. A configured hourly rate produces a clearly labeled estimate equal to period hours multiplied by the rate; no estimate appears without a valid rate.
-10. Printing produces a one-page report with the required period details and no interactive controls, without losing dates or totals.
-11. The extension works offline and timesheet data is not sent to an external service.
+### FR-06: Consistent File-Activity Displays
 
-## 8. Open decisions and assumptions
+- The status bar, File activity, floating timer, and time-card snapshot use the same cumulative totals and
+  tracking state. Total equals the sum of all scoped file totals, with the current interval included once.
+- File activity lists paths and readable hour/minute durations; duplicate basenames remain distinguishable.
+  Count a file only after it has a positive total or is currently eligible, consistently across displays and cards.
+- The floating timer shows total and current-file durations as `HH:mm:ss` and refreshes every second while
+  visible. It uses the shared snapshot, not an independent counter; refreshes do not cause per-second writes.
+- Pause, resume, focus, exclusion, reset, and file changes update visible state promptly. Show running, paused,
+  excluded, or waiting status in text, not color alone.
+- Show and hide commands and the File activity entry point reuse one panel. Hide or close only affects
+  presentation; it never pauses tracking. The panel can move to another VS Code window but is not a native
+  always-on-top overlay.
 
-- **One entry per date:** Assumed for the initial release because the requested report uses one time-in/time-out pair per day. Supporting multiple shifts per day would require a different row and aggregation model.
-- **365 rows:** Interpreted as 365 available daily rows in the timesheet grid, with filtering across saved records. Whether the product should support leap-day/366-day display in the same grid should be confirmed before implementation; records themselves must not be lost if a calendar year contains 366 days.
-- **Period start:** The requested initial date (21 October 2026) is treated as the seeded default, not a date dynamically chosen from the current system clock.
-- **Currency:** The hourly-rate currency and locale are not specified. The initial implementation should use a user-configurable currency or clearly display the rate as a numeric amount without implying a currency until one is selected.
+### FR-07: File-Activity Time Cards
+
+- A card is an explicit snapshot of cumulative automatic file activity, separate from manual reports. Label its
+  timestamp as the generation time in UTC and state that idle time while focused is included.
+- Show every counted file in descending duration order, total duration, file count, and each file's share of the
+  unrounded total. Display durations in whole minutes and percentages to one decimal place; independent rounding
+  need not sum to 100%. Handle empty and zero totals without division errors.
+- Render file names as text, distinguish duplicate basenames with unique numbered labels, and omit directory
+  paths and source contents from exports. Warn users that names can still be sensitive.
+- Preview can refresh its snapshot. HTML and PDF export use the displayed snapshot and a user-selected
+  destination; cancellation writes nothing. Show actionable errors and confirm success only after writing.
+- HTML is standalone, offline, and contains no scripts. PDF may span pages without omitting files. If PDF fonts
+  cannot represent a name, report the limitation and offer HTML/browser printing rather than corrupting text.
+
+### FR-08: Persistence, Migration, and Concurrency
+
+- Store manual entries and preferences in local extension-global storage; store automatic totals and exclusions
+  globally across workspaces, including a no-workspace window. The two datasets remain separate.
+- Persist manual edits and preferences after validation. Checkpoint eligible file activity at least every
+  60 seconds during normal operation and settle it on meaningful transitions and orderly shutdown.
+  Await writes before confirming success; report failures and allow a later retry.
+- Invalid or unreadable stored data must produce a visible diagnostic and a non-destructive recovery path.
+  Preserve the original data; never silently replace it with an empty store or discard malformed records.
+- Migrate known legacy data only after validating it. Preserve the source until the destination is durably
+  written, and make migration repeatable. If old and new totals both exist and their relationship is unknown,
+  retain both without automatically summing or overwriting them; require explicit user reconciliation.
+  Existing aggregate totals cannot reconstruct previously miscounted intervals.
+- Prevent lost updates across timesheet panels and extension hosts. Use one shared authoritative state and
+  a single writer for each global store; other hosts must not track or modify that store while ownership is
+  unavailable. Show a clear read-only or paused state and allow safe recovery after an owner exits or crashes.
+  Never silently merge competing whole-store snapshots.
+
+## 8. Non-Functional Requirements
+
+- **Privacy:** Do not transmit file paths, names, timesheet data, rates, or source contents. Do not read file
+  contents to measure time. Explain global storage and exported-name sensitivity in user documentation.
+- **Security:** Escape dynamic text and attributes in their rendering contexts. Validate webview messages and
+  apply a restrictive Content Security Policy (CSP); exported HTML needs no scripts or remote resources.
+- **Accessibility:** Support keyboard navigation and meaningful labels for all inputs and actions. Associate
+  errors with their fields; do not rely on color, icons, or motion alone. Support light, dark, high-contrast,
+  reduced-motion, and grayscale output.
+- **Lifecycle:** Dispose listeners, timers, and panels when their owners close. Reopening a floating panel
+  repeatedly must not multiply intervals. Preserve current command identifiers and existing valid data.
+- **Compatibility:** Target the manifest's VS Code `^1.140.0` unless a separate compatibility decision changes
+  it. Test path identity, storage, and exports on Windows, macOS, and Linux. Preserve local wall-clock
+  timesheet values without timezone conversion.
+
+## 9. Proposed Release Checks and Success Measures
+
+These are acceptance targets, not observed measurements or business metrics.
+
+- Deterministic-clock tests produce exact millisecond totals through activation, file switches, pause, focus,
+  exclusions, reset, checkpoints, shutdown, and restart, with no duplicate or ineligible intervals.
+- During normal, unblocked extension-host operation, a visible timer and state changes appear within one second.
+  The 60-second checkpoint bounds normally unpersisted eligible time; failed writes or abrupt termination can
+  exceed that bound and must not be represented as lossless recovery.
+- Restart preserves successfully settled data exactly. Repeated migration, canceled reset, write failures,
+  malformed data, concurrent panels, and concurrent hosts preserve all applicable durable records.
+- Timesheet PDF contains every required date and total on one A4 page, or reports a legibility limitation without
+  claiming success. Card exports match the preview snapshot and include every counted file.
+- With 1,000 seeded file records, snapshot and card generation each complete within 200 ms on a documented
+  reference machine. Record hardware, operating system, VS Code version, input, and timing method.
+
+No adoption, revenue, or productivity target is supported by current evidence. Do not add telemetry solely
+to measure success.
+
+An exploratory 1,000-record probe on Windows `10.0.26100`, Intel Core Ultra 7 265U, and Node `26.13.1`
+measured maxima of 1.78 ms for snapshots and 4.66 ms for card creation plus HTML rendering. It used two
+warm-up iterations and ten measured iterations. This ran outside the VS Code `1.146.0` extension host;
+the release check still requires an in-host measurement.
+
+## 10. Validation Strategy
+
+Use focused automated cases, then test the extension host and generated artifacts. Existing tests are starting
+points, not evidence that the full release criteria have passed. [E8]
+
+- Test dates, leap years, month-end clamping, year boundaries, invalid input, duplicates, partial rows, equal
+  times, overnight times, filters, counts, estimates, and restart persistence.
+- Use a deterministic clock for start, switch, no editor, focus loss and regain, pause/resume, exclusions,
+  reset, checkpoint, restart, and persistence-failure sequences.
+- Exercise simultaneous panels and extension hosts, ownership loss and recovery, failed writes and retry,
+  malformed storage, and repeatable migration with conflicting legacy data.
+- Inspect generated PDFs for page count, every date and total, long tasks, weekends, incomplete entries,
+  grayscale readability, and unsupported characters. Test print-viewer and save success, cancellation, and failure.
+- Test cards with empty data, more than five files, repeated and special-character names, long names, Unicode,
+  multi-page PDFs, and preview/export snapshot equality.
+- Verify keyboard access, labels, themes, reduced motion, repeated panel open/close, and extension disposal.
+  Run supported-platform extension-host and packaged-extension smoke tests.
+- Run `npm run compile`, `npm run lint`, and `npm test` for implementation changes. Use
+  `npm run package:optimized` for release verification. Fix or replace the unverified Playwright workflow
+  before relying on it; do not equate its existence with coverage.
+
+## 11. Implementation Boundaries and Delivery Sequence
+
+Use the existing TypeScript modules and VS Code APIs; do not introduce a separate timing counter or service.
+
+1. Establish shared-store ownership, non-destructive recovery, and repeatable migration for both datasets.
+1. Repair and test manual entry, period, report, and persistence failure paths.
+1. Complete automatic tracking, exact-file exclusions, safe reset, and coherent snapshots.
+1. Align displays and exports with the shared snapshots; retain existing HTML and PDF card capabilities.
+1. Verify accessibility, extension-host behavior, supported platforms, packaging, and release metadata;
+   update user documentation to describe actual behavior.
+
+No delivery date or effort estimate is implied.
+
+## 12. Open Product Decisions
+
+The following recommendations resolve the draft's decisions for this PRD. They are product requirements,
+not claims that the current implementation already meets them. A product owner may revise them explicitly.
+
+1. **Storage:** Retain existing global-across-workspaces storage for both datasets. It avoids a disruptive,
+   ambiguous migration; workspace isolation can be reconsidered only with a user-controlled migration plan.
+1. **Focus:** Count selected local-file time only while the window is focused, including idle time. This
+   preserves the current product's policy without introducing unreliable activity detection.
+1. **Concurrent windows:** Permit one writer per global store. Other hosts show a clear unavailable/read-only
+   or paused state until safe ownership is acquired; never silently lose or double-count data.
+1. **Floating Hide:** Close the panel and keep tracking. The existing Show command restores it.
+1. **Calendar and currency:** Show 366 rows in leap years; use a numeric, currency-neutral hourly estimate.
+   Keep the specified 21 October 2026 seed and the clamped-month end rule in FR-02.
+1. **Distribution:** Do not change publisher, repository, support links, or release version by assumption.
+   Block publication until ownership and metadata are verified; package creation does not approve publication.
+1. **Release targets:** Use the checks in section 9 and record their test environment. Product ownership must
+   accept the evidence before release; no unmeasured target is reported as achieved.
+
+## 13. Evidence Index
+
+Links identify the inspected working-tree sources; the timer draft is historical input, not baseline evidence.
+
+- **E1:** [README](../README.md): documented workflows, storage, exports, and floating timer.
+- **E2:** [Timer draft](timer_PRD.md) and [changelog](../CHANGELOG.md): proposed timer requirements and history.
+- **E3:** [Manifest](../package.json), [TypeScript configuration](../tsconfig.json),
+  [test configuration](../.vscode-test.mjs), and [Playwright workflow](../.github/workflows/playwright.yml):
+  commands, dependencies, supported version, and validation setup.
+- **E4:** [Activation and persistence](../src/extension.ts) and [file tracker](../src/fileTimeTracker.ts):
+  storage, tracking transitions, commands, and report actions.
+- **E5:** [Timesheet data](../src/timeData.ts), [timesheet webview](../src/webview.ts), and
+  [timesheet PDF](../src/pdfReport.ts): validation, periods, presentation, and report generation.
+- **E6:** [Floating timer](../src/floatingTimer.ts) and [time card](../src/timeCard.ts):
+  panel lifecycle, snapshot rendering, and exports.
+- **E7:** [Packaging exclusions](../.vscodeignore) and [launch configuration](../.vscode/launch.json):
+  packaging and extension-host launch setup.
+- **E8:** [Extension tests](../src/test/extension.test.ts), [report-action tests](../src/test/reportActions.test.ts),
+  and [card tests](../src/test/timeCard.test.ts): existing test cases and their limits.
+- **E9:** [Legacy exclusions](../src/excludeFiles.ts), [legacy provider](../src/timeTrackerProvider.ts), and
+  [legacy card generator](../src/timeCardGenerator.ts): unconnected draft-era modules, not active features.
+
+## 14. Definition of Done
+
+The proposed release is complete only when:
+
+- All P0 and P1 requirements pass, including failure, recovery, concurrency, and accessibility paths.
+- Timing, storage, migration, reset, manual reports, and card exports have recorded automated and
+  extension-host evidence against sections 9 and 10.
+- Existing command identifiers and valid records remain compatible; unresolved legacy data is preserved.
+- Documentation matches verified storage, focus, pause, exclusion, reset, print, and export behavior.
+- Supported-platform and packaged-extension smoke checks pass, and release ownership is confirmed.
+
+This document alone does not implement requirements or establish security, runtime, performance, or release
+validation.

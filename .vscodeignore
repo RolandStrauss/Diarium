@@ -4,6 +4,7 @@
 .clinerules
 .cursor/**
 .opencode/**
+.playwright-mcp/**
 .windsurf/**
 AGENTS.md
 **/.yarn/**
@@ -12,6 +13,7 @@ AGENTS.md
 src/**
 docs/**
 timesheet-*.pdf
+time-card-*.html
 out/**
 !out/extension.js
 .gitignore

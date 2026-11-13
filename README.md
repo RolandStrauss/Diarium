@@ -18,9 +18,20 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 - Browse the 365 or 366 dates in a calendar year, filter by date or task, and review filtered totals.
 - Review daily, Monday-to-Sunday weekly, monthly, or yearly totals.
 - Open **Period report** to edit the 21st-to-20th reporting cycle and configure an optional hourly rate. **Print report** opens a landscape A4 PDF in your default PDF viewer; use the viewer's **Print** command to print it. A print copy is kept in extension storage without prompting for a save location. **Save as PDF** lets you choose where to save the report.
+- Timesheet PDF tasks currently support printable ASCII only. The extension reports unsupported
+  characters or content that cannot fit on one page instead of truncating or corrupting the report.
 - Incomplete time pairs are highlighted and excluded from totals. Entries and preferences are saved as JSON in VS Code extension storage and persist across restarts; existing extension-stored data is migrated automatically.
 
 The initial reporting period starts on 21 October 2026. Its end date is calculated automatically. The hourly estimate is informational and does not represent payroll or an invoice.
+
+Only one VS Code window can use Time Tracker's shared storage at a time. Other
+windows show an unavailable status and do not track or modify records. Close the
+owning window, then reload another window to use the extension.
+
+After an unexpected crash, a storage lock may remain. Close all VS Code windows
+and ensure their extension hosts have stopped. Then remove only the lock file
+named in the error message and reopen VS Code. Do not remove the timesheet or
+other storage files.
 
 ## Time cards
 
@@ -38,10 +49,33 @@ Run **Time Tracker: Preview Time Card** from the Command Palette, or choose
   The snapshot timestamp uses UTC. Durations display whole minutes; percentages use unrounded time.
 - Exports contain file names only, not directory paths. Repeated names are numbered.
   Review file names before sharing because names can contain sensitive information.
-- PDF cards support Latin file names. For other scripts or emoji, save HTML and use your
+- PDF cards support printable ASCII and Latin-1 file names. For other characters, save HTML and use your
   browser's print-to-PDF option. The extension reports unsupported names instead of corrupting them.
 
 Existing timesheet reports and tracking data remain unchanged. Exporting does not reset tracked time.
+
+## Floating timer
+
+Run **Time Tracker: Show Floating Timer**, or choose **Show floating timer** in **File activity**.
+
+- The compact panel shows total and current-file activity as `HH:mm:ss`, updated every second.
+  It reads the existing tracker; updates do not write storage every second.
+- The panel opens beside the editor without taking focus. Keep it in a separate editor group,
+  or use VS Code's **Move into New Window** action on its tab.
+  This is a VS Code panel, not a desktop always-on-top overlay.
+- **Pause** saves elapsed file time and stops all automatic file tracking, including idle time.
+  **Resume** starts from the currently focused local file without counting the paused interval.
+  File changes and window focus changes do not cancel a manual pause.
+- **Hide timer**, closing the tab, or **Time Tracker: Hide Floating Timer** closes only the panel.
+  Tracking continues unless paused. Showing the timer again restores live totals.
+- **Time Tracker: Pause / Resume File Tracking** also works when the panel is closed.
+  The status bar and File activity indicate a manual pause.
+- Manual pause lasts for the current extension session. After restarting VS Code, automatic
+  tracking resumes. Stored totals, daily entries, reports, and time cards remain unchanged.
+- **Time Tracker: Manage File Exclusions** includes or excludes individual local file paths.
+  Excluding a file preserves its past activity; exclusions survive restarts and resets.
+- **Time Tracker: Reset File Activity** asks for confirmation before clearing automatic totals
+  across workspaces. It does not remove timesheet entries, exclusions, or exported files.
 
 ## Development
 

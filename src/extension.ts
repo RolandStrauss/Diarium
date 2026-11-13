@@ -1,19 +1,23 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
 import { customPeriodEnd, formatDuration, isValidDate, validateEntry, type TimeEntry } from './timeData';
 import { renderReportPdf } from './pdfReport';
-import { FileTimeTracker } from './fileTimeTracker';
+import { FileTimeTracker, summarizeFileTime } from './fileTimeTracker';
+import { FloatingTimer } from './floatingTimer';
 import { randomBytes } from 'node:crypto';
 import { createTimeCard, renderTimeCardHtml, renderTimeCardPdf, type TimeCard } from './timeCard';
+import { acquireStorageOwnership } from './storageOwnership';
 
 const STORAGE_KEY = 'time-tracker.data';
 const STORAGE_FILE = 'timesheet.json';
 const FILE_TIMES_STORAGE_KEY = 'time-tracker.file-times';
+const FILE_ACTIVITY_STORAGE_KEY = 'time-tracker.file-activity';
+const EXCLUDED_FILES_STORAGE_KEY = 'excludedFiles';
 const DEFAULT_PERIOD_START = '2026-10-21';
 
 interface TrackerState {
@@ -23,25 +27,42 @@ interface TrackerState {
 }
 
 let fileTimeTracker: FileTimeTracker | undefined;
+let releaseStorageOwnership: (() => void) | undefined;
+let pendingTimesheetWrites = Promise.resolve();
+let pendingTimesheetLoad: Promise<TrackerState> | undefined;
+let stopTracking: (() => void) | undefined;
 
 function parseState(stored: Partial<TrackerState> = {}): TrackerState {
+	if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+		throw new Error('The saved timesheet is invalid. Restore or repair the JSON file before continuing.');
+	}
 	const entries: Record<string, TimeEntry> = {};
-	if (stored.entries && typeof stored.entries === 'object') {
+	if (stored.entries !== undefined) {
+		if (!stored.entries || typeof stored.entries !== 'object' || Array.isArray(stored.entries)) {
+			throw new Error('The saved timesheet entries are invalid. Restore or repair the JSON file before continuing.');
+		}
 		for (const [date, candidate] of Object.entries(stored.entries)) {
 			if (!candidate || typeof candidate.date !== 'string' || typeof candidate.task !== 'string' ||
 				typeof candidate.timeIn !== 'string' || typeof candidate.timeOut !== 'string' ||
 				candidate.date !== date || validateEntry(candidate)) {
-				continue;
+				throw new Error(`The saved entry for ${date} is invalid. Restore or repair the JSON file before continuing.`);
 			}
 			entries[date] = candidate;
 		}
 	}
-	const periodStart = typeof stored.periodStart === 'string' && isValidDate(stored.periodStart)
-		? stored.periodStart
-		: DEFAULT_PERIOD_START;
-	const hourlyRate = typeof stored.hourlyRate === 'number' && Number.isFinite(stored.hourlyRate) && stored.hourlyRate >= 0
-		? stored.hourlyRate
-		: null;
+	const periodStart = stored.periodStart === undefined ? DEFAULT_PERIOD_START : stored.periodStart;
+	if (typeof periodStart !== 'string' || !isValidDate(periodStart)) {
+		throw new Error('The saved period start is invalid. Restore or repair the JSON file before continuing.');
+	}
+	try {
+		customPeriodEnd(periodStart);
+	} catch {
+		throw new Error('The saved period end is outside the supported calendar. Restore or repair the JSON file before continuing.');
+	}
+	const hourlyRate = stored.hourlyRate === undefined ? null : stored.hourlyRate;
+	if (hourlyRate !== null && (typeof hourlyRate !== 'number' || !Number.isFinite(hourlyRate) || hourlyRate < 0)) {
+		throw new Error('The saved hourly rate is invalid. Restore or repair the JSON file before continuing.');
+	}
 	return { entries, periodStart, hourlyRate };
 }
 
@@ -52,9 +73,23 @@ function stateFile(context: vscode.ExtensionContext): string {
 async function writeState(context: vscode.ExtensionContext, state: TrackerState): Promise<void> {
 	const file = stateFile(context);
 	await mkdir(path.dirname(file), { recursive: true });
-	const temporaryFile = `${file}.${process.pid}.${Date.now()}.tmp`;
-	await writeFile(temporaryFile, JSON.stringify(state, null, 2), 'utf8');
-	await rename(temporaryFile, file);
+	const temporaryFile = `${file}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+	const handle = await open(temporaryFile, 'wx');
+	try {
+		await handle.writeFile(JSON.stringify(state, null, 2), 'utf8');
+		await handle.close();
+		await rename(temporaryFile, file);
+	} catch (error) {
+		try {
+			await handle.close();
+			await unlink(temporaryFile);
+		} catch (cleanupError) {
+			const reason = error instanceof Error ? error.message : String(error);
+			const detail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+			throw new AggregateError([error, cleanupError], `Could not save the timesheet: ${reason}. Temporary file cleanup failed: ${detail}`);
+		}
+		throw error;
+	}
 }
 
 async function readState(context: vscode.ExtensionContext): Promise<TrackerState> {
@@ -89,11 +124,146 @@ async function saveDocument(filename: string, format: 'html' | 'pdf', render: ()
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-	fileTimeTracker = new FileTimeTracker(
-		context.globalState.get<unknown>(FILE_TIMES_STORAGE_KEY),
-		async fileTimes => context.globalState.update(FILE_TIMES_STORAGE_KEY, fileTimes),
-	);
+	let excludedFiles: string[] = [];
+	const showUnavailable = (reason: string, recoveryAvailable = false): void => {
+		const unavailable = (): void => {
+			void (async () => {
+				try {
+					const choice = await vscode.window.showErrorMessage(reason, ...(recoveryAvailable ? ['Export raw data'] : []));
+					if (choice !== 'Export raw data') {
+						return;
+					}
+					const destination = await vscode.window.showSaveDialog({
+						filters: { 'JSON documents': ['json'] },
+						saveLabel: 'Export raw data containing file paths',
+					});
+					if (!destination) {
+						return;
+					}
+					const data = {
+						fileActivity: context.globalState.get<unknown>(FILE_ACTIVITY_STORAGE_KEY),
+						fileTimes: context.globalState.get<unknown>(FILE_TIMES_STORAGE_KEY),
+						excludedFiles: context.globalState.get<unknown>(EXCLUDED_FILES_STORAGE_KEY),
+						legacyFileTimers: context.globalState.get<unknown>('fileTimers'),
+					};
+					await writeFile(destination.fsPath, JSON.stringify(data, null, 2), 'utf8');
+					void vscode.window.showInformationMessage(`Raw file activity data saved to ${destination.fsPath}.`);
+				} catch (error) {
+					const detail = error instanceof Error ? error.message : String(error);
+					void vscode.window.showErrorMessage(`Could not export raw file activity data: ${detail}`);
+				}
+			})();
+		};
+		const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+		status.text = '$(debug-pause) Time Tracker unavailable';
+		status.tooltip = reason;
+		status.command = 'time-tracker.openTimesheet';
+		status.show();
+		context.subscriptions.push(status, ...[
+			'time-tracker.openTimesheet',
+			'time-tracker.openTimeCard',
+			'time-tracker.showFloatingTimer',
+			'time-tracker.hideFloatingTimer',
+			'time-tracker.toggleTracking',
+			'time-tracker.manageExclusions',
+			'time-tracker.resetFileTimes',
+		].map(command => vscode.commands.registerCommand(command, unavailable)));
+		unavailable();
+	};
+	try {
+		releaseStorageOwnership = acquireStorageOwnership(context.globalStorageUri.fsPath);
+		const savedActivity = context.globalState.get<unknown>(FILE_ACTIVITY_STORAGE_KEY);
+		let fileTimes: unknown = context.globalState.get<unknown>(FILE_TIMES_STORAGE_KEY);
+		let savedExclusions: unknown = context.globalState.get<unknown>(EXCLUDED_FILES_STORAGE_KEY);
+		if (savedActivity !== undefined) {
+			if (!savedActivity || typeof savedActivity !== 'object' || Array.isArray(savedActivity) ||
+				!('version' in savedActivity) || savedActivity.version !== 1 ||
+				!('fileTimes' in savedActivity) || savedActivity.fileTimes === undefined ||
+				!('excludedFiles' in savedActivity) || savedActivity.excludedFiles === undefined) {
+				throw new Error('Invalid stored file activity data. Restore a backup before using Time Tracker.');
+			}
+			fileTimes = savedActivity.fileTimes;
+			savedExclusions = savedActivity.excludedFiles;
+		}
+		if (savedExclusions !== undefined) {
+			if (!Array.isArray(savedExclusions) ||
+				savedExclusions.some(file => typeof file !== 'string' || !file)) {
+				throw new Error('Invalid stored file exclusions. Restore a backup before using Time Tracker.');
+			}
+			excludedFiles = [...new Set(savedExclusions)];
+		}
+		fileTimeTracker = new FileTimeTracker(
+			fileTimes,
+			async (totals, exclusions) => context.globalState.update(FILE_ACTIVITY_STORAGE_KEY, {
+				version: 1, fileTimes: totals, excludedFiles: [...exclusions],
+			}),
+			undefined,
+			excludedFiles,
+		);
+		if (context.globalState.get<unknown>('fileTimers') !== undefined) {
+			void vscode.window.showWarningMessage(
+				'Older fileTimers data remains separate and was not imported. Back up your VS Code profile and reconcile it before relying on file activity totals.',
+			);
+		}
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		const recoveryAvailable = !!releaseStorageOwnership;
+		if (releaseStorageOwnership) {
+			try {
+				releaseStorageOwnership();
+			} catch (releaseError) {
+				const detail = releaseError instanceof Error ? releaseError.message : String(releaseError);
+				showUnavailable(`${reason} Could not release storage ownership: ${detail}`);
+				return;
+			} finally {
+				releaseStorageOwnership = undefined;
+			}
+		}
+		showUnavailable(reason, recoveryAvailable);
+		return;
+	}
 	const fileTimePanels = new Set<vscode.WebviewPanel>();
+	let stopping = false;
+	const tracker = fileTimeTracker;
+	const currentSnapshot = () => {
+		const snapshot = tracker.snapshot();
+		return { ...snapshot, excluded: !!snapshot.activeFile && tracker.isExcluded(snapshot.activeFile) };
+	};
+	let timesheetState: TrackerState | undefined;
+	let pendingState: Promise<TrackerState> | undefined;
+	let timesheetWrites = Promise.resolve();
+	const getState = async (): Promise<TrackerState> => {
+		if (timesheetState) {
+			return timesheetState;
+		}
+		if (!pendingState) {
+			pendingState = readState(context);
+			pendingTimesheetLoad = pendingState;
+		}
+		try {
+			timesheetState = await pendingState;
+			return timesheetState;
+		} finally {
+			pendingState = undefined;
+			pendingTimesheetLoad = undefined;
+		}
+	};
+	const changeState = (change: (state: TrackerState) => TrackerState): Promise<void> => {
+		if (stopping) {
+			return Promise.reject(new Error('Time Tracker is shutting down; reopen it before editing.'));
+		}
+		const write = timesheetWrites.then(async () => {
+			const next = change(await getState());
+			await writeState(context, next);
+			timesheetState = next;
+			for (const panel of fileTimePanels) {
+				await panel.webview.postMessage({ type: 'saved', data: { ...next, ...currentSnapshot() } });
+			}
+		});
+		timesheetWrites = write.then(() => undefined, () => undefined);
+		pendingTimesheetWrites = timesheetWrites;
+		return write;
+	};
 	const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 	statusBarItem.command = 'time-tracker.openTimesheet';
 	statusBarItem.text = '$(watch) 0h 00m | 0h 00m';
@@ -104,45 +274,122 @@ export function activate(context: vscode.ExtensionContext): void {
 		void vscode.window.showErrorMessage(`Could not save automatic file time data: ${reason}`);
 	};
 	const postFileTimes = (): void => {
-		const snapshot = fileTimeTracker?.snapshot();
-		if (!snapshot) {
-			return;
-		}
-		const totalTime = formatDuration(Math.floor(
-			Object.values(snapshot.fileTimes).reduce((total, milliseconds) => total + milliseconds, 0) / 60_000,
-		));
-		const currentTime = formatDuration(Math.floor(
-			(snapshot.activeFile ? snapshot.fileTimes[snapshot.activeFile] ?? 0 : 0) / 60_000,
-		));
+		const snapshot = currentSnapshot();
+		const totals = summarizeFileTime(snapshot);
+		const totalTime = formatDuration(Math.floor(totals.total / 60_000));
+		const currentTime = formatDuration(Math.floor(totals.current / 60_000));
 		const currentFileLabel = snapshot.activeFile
 			? `Current file (${path.basename(snapshot.activeFile)})`
 			: 'Current file';
-		statusBarItem.text = `$(watch) ${totalTime} | ${currentTime}`;
-		statusBarItem.tooltip = `Total tracked: ${totalTime}\n${currentFileLabel}: ${currentTime}\nClick to open Time Tracker`;
+		statusBarItem.text = `${snapshot.paused ? '$(debug-pause)' : '$(watch)'} ${totalTime} | ${currentTime}` +
+			(snapshot.excluded ? ' Excluded' : !snapshot.activeFile ? ' Waiting' : '');
+		statusBarItem.tooltip = `Total tracked: ${totalTime}\n${currentFileLabel}: ${currentTime}\n${snapshot.paused ? 'Automatic tracking paused\n' : snapshot.excluded ? 'Current file excluded\n' : ''}Click to open Time Tracker`;
+		floatingTimer.update();
 		for (const panel of fileTimePanels) {
 			void panel.webview.postMessage({ type: 'fileTimes', data: snapshot });
 		}
 	};
+	const updateTracking = async (operation: Promise<void>): Promise<void> => {
+		postFileTimes();
+		try {
+			await operation;
+		} catch (error) {
+			showFileTimePersistenceError(error);
+		}
+		postFileTimes();
+	};
+	const pauseOrResume = (): Promise<void> => stopping ? Promise.resolve() :
+		updateTracking(tracker.setPaused(!tracker.snapshot().paused));
+	const floatingTimer = new FloatingTimer(currentSnapshot, pauseOrResume);
+	const showFloatingTimer = vscode.commands.registerCommand('time-tracker.showFloatingTimer', () => floatingTimer.show());
+	const hideFloatingTimer = vscode.commands.registerCommand('time-tracker.hideFloatingTimer', () => floatingTimer.hide());
+	const toggleTracking = vscode.commands.registerCommand('time-tracker.toggleTracking', pauseOrResume);
+	const manageExclusions = vscode.commands.registerCommand('time-tracker.manageExclusions', async () => {
+		if (stopping) {
+			void vscode.window.showErrorMessage('Time Tracker is shutting down.');
+			return;
+		}
+		const editor = vscode.window.activeTextEditor;
+		const active = editor?.document.uri.scheme === 'file' ? editor.document.uri.fsPath : undefined;
+		const files = active ? [active, ...excludedFiles.filter(file => file !== active)] : excludedFiles;
+		if (!files.length) {
+			void vscode.window.showInformationMessage('No local file is active and no files are excluded.');
+			return;
+		}
+		const selection = await vscode.window.showQuickPick(files.map(file => ({
+			label: `${tracker.isExcluded(file) ? 'Include' : 'Exclude'} ${path.basename(file)}`,
+			description: file,
+			file,
+		})), { placeHolder: 'Choose a local file to exclude or include' });
+		if (!selection) {
+			return;
+		}
+		const next = new Set(excludedFiles);
+		if (next.has(selection.file)) {
+			next.delete(selection.file);
+		} else {
+			next.add(selection.file);
+		}
+		excludedFiles = [...next];
+		const operation = tracker.setExcludedFiles(excludedFiles);
+		postFileTimes();
+		try {
+			await operation;
+			void vscode.window.showInformationMessage(
+				`${path.basename(selection.file)} is ${tracker.isExcluded(selection.file) ? 'excluded' : 'included'}.`,
+			);
+		} catch (error) {
+			showFileTimePersistenceError(error);
+		}
+		postFileTimes();
+	});
+	const resetFileTimes = vscode.commands.registerCommand('time-tracker.resetFileTimes', async () => {
+		if (stopping) {
+			void vscode.window.showErrorMessage('Time Tracker is shutting down.');
+			return;
+		}
+		const answer = await vscode.window.showWarningMessage(
+			'Reset all automatic file activity across workspaces? Timesheet entries, exclusions, and exports will be kept.',
+			{ modal: true },
+			'Reset',
+		);
+		if (answer !== 'Reset') {
+			return;
+		}
+		try {
+			await tracker.reset();
+			postFileTimes();
+			void vscode.window.showInformationMessage('Automatic file activity was reset.');
+		} catch (error) {
+			showFileTimePersistenceError(error);
+			postFileTimes();
+		}
+	});
 	const trackActiveFile = (): void => {
+		if (stopping) {
+			return;
+		}
 		const editor = vscode.window.activeTextEditor;
 		const filePath = vscode.window.state.focused && editor?.document.uri.scheme === 'file'
 			? editor.document.uri.fsPath
 			: undefined;
-		void fileTimeTracker?.setActiveFile(filePath).then(postFileTimes, error => {
-			showFileTimePersistenceError(error);
-			postFileTimes();
-		});
+		void updateTracking(tracker.setActiveFile(filePath));
 	};
 	trackActiveFile();
 
 	const activeEditorListener = vscode.window.onDidChangeActiveTextEditor(trackActiveFile);
 	const windowStateListener = vscode.window.onDidChangeWindowState(trackActiveFile);
 	const fileTimeInterval = setInterval(() => {
-		void fileTimeTracker?.checkpoint().then(postFileTimes, error => {
-			showFileTimePersistenceError(error);
-			postFileTimes();
-		});
+		if (!stopping) {
+			void updateTracking(tracker.checkpoint());
+		}
 	}, 60_000);
+	const displayInterval = setInterval(postFileTimes, 1000);
+	stopTracking = () => {
+		stopping = true;
+		clearInterval(fileTimeInterval);
+		clearInterval(displayInterval);
+	};
 
 	const openTimeCard = vscode.commands.registerCommand('time-tracker.openTimeCard', () => {
 		let card: TimeCard;
@@ -190,112 +437,131 @@ export function activate(context: vscode.ExtensionContext): void {
 	});
 
 	const disposable = vscode.commands.registerCommand('time-tracker.openTimesheet', async () => {
+		if (stopping) {
+			void vscode.window.showErrorMessage('Time Tracker is shutting down; reopen it before editing.');
+			return;
+		}
 		const panel = vscode.window.createWebviewPanel(
 			'timeTracker',
 			'Time Tracker',
 			vscode.ViewColumn.One,
 			{ enableScripts: true, retainContextWhenHidden: true },
 		);
-		let state: TrackerState;
 		try {
-			state = await readState(context);
+			await getState();
 		} catch (error) {
 			panel.dispose();
 			const reason = error instanceof Error ? error.message : String(error);
-			void vscode.window.showErrorMessage(`Could not load the Time Tracker JSON data: ${reason}`);
+			void vscode.window.showErrorMessage(`Could not load ${stateFile(context)}: ${reason}`);
 			return;
 		}
-		let writeQueue = Promise.resolve();
-		const persistState = (): Promise<void> => {
-			writeQueue = writeQueue.then(() => writeState(context, state));
-			return writeQueue;
-		};
 		fileTimePanels.add(panel);
 		panel.onDidDispose(() => fileTimePanels.delete(panel));
 		panel.webview.html = getWebviewHtml(panel.webview);
 
-		const postState = (type: 'saved' | 'state'): void => {
-			void panel.webview.postMessage({ type, data: { ...state, ...fileTimeTracker?.snapshot() } });
+		const postState = async (): Promise<void> => {
+			await panel.webview.postMessage({ type: 'state', data: { ...await getState(), ...currentSnapshot() } });
 		};
-		const saveEntry = async (entry: TimeEntry, create: boolean, view: 'entries' | 'report'): Promise<void> => {
-			if (create && state.entries[entry.date]) {
-				await panel.webview.postMessage({
-					type: 'error',
-					view,
-					message: 'There is already an entry for this date. Time Tracker allows one entry per date; edit the existing row instead.',
-				});
-				return;
+		const assertUnchanged = (current: TimeEntry | undefined, expected: TimeEntry | null | undefined): void => {
+			if (expected === undefined || (current === undefined) !== (expected === null) ||
+				(current && expected && (current.date !== expected.date || current.task !== expected.task ||
+					current.timeIn !== expected.timeIn || current.timeOut !== expected.timeOut))) {
+				throw new Error('This entry changed in another view. Reload it before editing again.');
 			}
-			const error = validateEntry(entry);
-			if (error) {
-				await panel.webview.postMessage({ type: 'error', view, message: error });
-				return;
-			}
-			state.entries[entry.date] = {
-				date: entry.date,
-				task: entry.task.trim(),
-				timeIn: entry.timeIn,
-				timeOut: entry.timeOut,
-			};
-			await persistState();
-			postState('saved');
 		};
 
-		panel.webview.onDidReceiveMessage(async (message: { type: string; entry?: TimeEntry; date?: string; value?: string; view?: 'entries' | 'report' }) => {
+		panel.webview.onDidReceiveMessage(async (message: {
+			type: string; entry?: TimeEntry; expected?: TimeEntry | null; date?: string;
+			value?: string; expectedValue?: string | number | null; view?: 'entries' | 'report';
+		}) => {
+			if (!message || typeof message !== 'object' || typeof message.type !== 'string') {
+				void vscode.window.showErrorMessage('Invalid Time Tracker message.');
+				return;
+			}
+			try {
 			switch (message.type) {
+				case 'showFloatingTimer':
+					floatingTimer.show();
+					break;
 				case 'openTimeCard':
 					await vscode.commands.executeCommand('time-tracker.openTimeCard');
 					break;
 				case 'ready':
-					postState('state');
+					await postState();
 					break;
 				case 'createEntry':
-					if (message.entry) {
-						await saveEntry(message.entry, true, 'entries');
+				case 'saveEntry': {
+					const entry = message.entry;
+					if (!entry || typeof entry.date !== 'string' || typeof entry.task !== 'string' ||
+						typeof entry.timeIn !== 'string' || typeof entry.timeOut !== 'string' || !isValidDate(entry.date)) {
+						throw new Error('Enter a valid date, task, and time values.');
 					}
-					break;
-				case 'saveEntry':
-					if (message.entry) {
-						if (!message.entry.task.trim() && !message.entry.timeIn && !message.entry.timeOut) {
-							delete state.entries[message.entry.date];
-							await persistState();
-							postState('saved');
-						} else {
-							await saveEntry(message.entry, false, message.view ?? 'entries');
+					const blank = !entry.task.trim() && !entry.timeIn && !entry.timeOut;
+					const validationError = blank && message.type === 'saveEntry' ? undefined : validateEntry(entry);
+					if (validationError) {
+						throw new Error(validationError);
+					}
+					await changeState(state => {
+						if (message.type === 'createEntry' && state.entries[entry.date]) {
+							throw new Error('There is already an entry for this date. Edit the existing row instead.');
 						}
-					}
+						if (message.type === 'saveEntry') {
+							assertUnchanged(state.entries[entry.date], message.expected);
+						}
+						const entries = { ...state.entries };
+						if (blank) {
+							delete entries[entry.date];
+						} else {
+							entries[entry.date] = { ...entry, task: entry.task.trim() };
+						}
+						return { ...state, entries };
+					});
 					break;
+				}
 				case 'deleteEntry':
-					if (message.date) {
-						delete state.entries[message.date];
-						await persistState();
-						postState('saved');
+					if (!message.date || !isValidDate(message.date)) {
+						throw new Error('Enter a valid date for the entry to delete.');
 					}
+					await changeState(state => {
+						const date = message.date!;
+						assertUnchanged(state.entries[date], message.expected);
+						const entries = { ...state.entries };
+						delete entries[date];
+						return { ...state, entries };
+					});
 					break;
 				case 'setPeriodStart':
-					if (!message.value || !isValidDate(message.value)) {
-						await panel.webview.postMessage({ type: 'error', view: 'report', message: 'Enter a valid period start date.' });
-						break;
+					if (typeof message.value !== 'string' || !isValidDate(message.value)) {
+						throw new Error('Enter a valid period start date.');
 					}
-					state.periodStart = message.value;
-					await persistState();
-					postState('saved');
-					break;
-				case 'setHourlyRate':
-					if (message.value === '') {
-						state.hourlyRate = null;
-					} else {
-						const rate = Number(message.value);
-						if (!Number.isFinite(rate) || rate < 0) {
-							await panel.webview.postMessage({ type: 'error', view: 'report', message: 'Enter a valid hourly rate of zero or more.' });
-							break;
+					customPeriodEnd(message.value);
+					await changeState(state => {
+						if (state.periodStart !== message.expectedValue) {
+							throw new Error('The period start changed in another view. Reload it before editing again.');
 						}
-						state.hourlyRate = rate;
-					}
-					await persistState();
-					postState('saved');
+						return { ...state, periodStart: message.value! };
+					});
 					break;
+				case 'setHourlyRate': {
+					if (typeof message.value !== 'string' ||
+						(message.value !== '' && !/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(message.value))) {
+						throw new Error('Enter a valid hourly rate of zero or more.');
+					}
+					const rate = message.value === '' ? null : Number(message.value);
+					if (rate !== null && (!Number.isFinite(rate) || rate < 0)) {
+						throw new Error('Enter a valid hourly rate of zero or more.');
+					}
+					await changeState(state => {
+						if (state.hourlyRate !== message.expectedValue) {
+							throw new Error('The hourly rate changed in another view. Reload it before editing again.');
+						}
+						return { ...state, hourlyRate: rate };
+					});
+					break;
+				}
 				case 'requestReportAction': {
+					await timesheetWrites;
+					const state = await getState();
 					const action = await vscode.window.showQuickPick([
 						{ label: 'Print report', detail: 'Open a PDF in your default viewer, then choose Print', value: 'print' },
 						{ label: 'Save as PDF', detail: 'Choose a location and save a PDF file', value: 'pdf' },
@@ -334,20 +600,50 @@ export function activate(context: vscode.ExtensionContext): void {
 					break;
 				}
 			}
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				await panel.webview.postMessage({
+					type: 'error',
+					view: message.view ?? (message.type === 'setPeriodStart' || message.type === 'setHourlyRate' ? 'report' : 'entries'),
+					message: reason,
+				});
+			}
 		});
 	});
 
 	context.subscriptions.push(
 		disposable,
 		openTimeCard,
+		showFloatingTimer,
+		hideFloatingTimer,
+		toggleTracking,
+		manageExclusions,
+		resetFileTimes,
+		floatingTimer,
 		statusBarItem,
 		activeEditorListener,
 		windowStateListener,
 		{ dispose: () => clearInterval(fileTimeInterval) },
+		{ dispose: () => clearInterval(displayInterval) },
 	);
 }
 
 export async function deactivate(): Promise<void> {
-	await fileTimeTracker?.setActiveFile(undefined);
-	fileTimeTracker = undefined;
+	stopTracking?.();
+	try {
+		const results = await Promise.allSettled([
+			fileTimeTracker?.setActiveFile(undefined),
+			pendingTimesheetWrites,
+			pendingTimesheetLoad,
+		]);
+		const failed = results.find(result => result.status === 'rejected');
+		if (failed && failed.status === 'rejected') {
+			throw failed.reason;
+		}
+	} finally {
+		fileTimeTracker = undefined;
+		stopTracking = undefined;
+		releaseStorageOwnership?.();
+		releaseStorageOwnership = undefined;
+	}
 }
