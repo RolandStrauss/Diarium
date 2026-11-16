@@ -12,6 +12,22 @@ export interface StoredTimeEntry extends TimeEntry {
 export type TimeEntriesByDate = Record<string, StoredTimeEntry[]>;
 export type ReportEntriesByDate = Record<string, TimeEntry[]>;
 
+export interface PublicHoliday {
+	date: string;
+	name: string;
+}
+
+export function validateHoliday(holiday: PublicHoliday): string | undefined {
+	if (!isValidDate(holiday.date)) {
+		return 'Enter a valid holiday date.';
+	}
+	if (typeof holiday.name !== 'string' || !holiday.name.trim() || holiday.name.length > 240 ||
+		/[\x00-\x1f\x7f]/.test(holiday.name)) {
+		return 'Enter a holiday name of up to 240 characters without control characters.';
+	}
+	return undefined;
+}
+
 export type PeriodKind = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface DateRange {

@@ -79,9 +79,32 @@ suite('Manual timesheet', () => {
 		});
 		vm.runInContext(script, context);
 		const element = (id: string) => document.getElementById(id);
-		const send = (type: string, data: object) => receive({ data: { type, data: structuredClone(data) } });
+		const send = (type: string, data: object) => receive({
+			data: { type, data: structuredClone(type === 'state' || type === 'saved' ? { holidays: [], ...data } : data) },
+		});
 		return { context, document, element, messages, send, deliver: (message: object) => receive({ data: message }) };
 	}
+
+	test('shows escaped holiday labels and submits validated holiday dates', () => {
+		const ui = frontend();
+		const holiday = { date: '2026-10-24', name: '<Festival>' };
+		ui.send('state', { entries: {}, holidays: [holiday], periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
+		ui.element('filter-date').value = holiday.date; ui.element('filter-date').dispatch('change');
+		assert.match(ui.element('entries-body').innerHTML, /Public holiday: &lt;Festival&gt;/);
+		assert.match(ui.element('report-body').innerHTML, /Public holiday: &lt;Festival&gt;/);
+		assert.match(ui.element('holidays-body').innerHTML, /&lt;Festival&gt;/);
+		ui.element('holiday-date').value = '2026-02-30';
+		ui.element('holiday-name').value = 'Holiday';
+		ui.element('holiday-form').dispatch('submit');
+		assert.match(ui.element('holidays-error').textContent, /valid holiday date/);
+		ui.element('holiday-date').value = '2026-10-25';
+		ui.element('holiday-form').dispatch('submit');
+		assert.deepStrictEqual(JSON.parse(JSON.stringify(ui.messages.at(-1))), {
+			type: 'addHoliday', holiday: { date: '2026-10-25', name: 'Holiday' }, view: 'holidays',
+		});
+		ui.deliver({ type: 'holidayAdded', holiday: { date: '2026-10-25', name: 'Holiday' } });
+		assert.strictEqual(ui.element('holiday-name').value, '');
+	});
 
 	test('filters across years, combines filters and counts completed visible entries', () => {
 		const ui = frontend();

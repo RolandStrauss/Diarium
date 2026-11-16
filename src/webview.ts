@@ -36,6 +36,7 @@ label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 .quick-add { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 12px 0; margin-bottom: 12px; }
 .quick-add h2 { font-size: 13px; margin: 0 10px 0 0; color: var(--vscode-foreground); }
 .quick-add label.task { flex: 1 1 220px; }
+.holiday-label { display: block; color: var(--vscode-editorInfo-foreground); white-space: normal; overflow-wrap: anywhere; }
 .totals { align-items: center; padding: 10px 0 14px; gap: 24px; }
 .metric { display: flex; align-items: baseline; gap: 7px; }
 .metric strong { font-size: 17px; font-variant-numeric: tabular-nums; }
@@ -65,13 +66,13 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 #report-table tr.weekend td:nth-child(2)::after { content: ' (Weekend)'; font-weight: 600; }
 #print-warning { margin: 0 0 8px; color: var(--warning); }
 .error { min-height: 20px; color: var(--vscode-errorForeground); padding: 5px 0; }
-@media (max-width: 700px) { body { padding: 0 10px 20px; } .toolbar { align-items: start; } .tabs { display: flex; width: 100%; } .filters > label, .period-controls > label { flex: 1 1 130px; } }
+@media (max-width: 700px) { body { padding: 0 10px 20px; } .toolbar { align-items: start; } .tabs { display: flex; flex-wrap: wrap; width: 100%; } .filters > label, .period-controls > label { flex: 1 1 130px; } }
 @media print {
 	@page { size: A4 landscape; margin: 7mm; }
 	body { padding: 0; color: #111; background: #fff; font: 8pt Arial, sans-serif; }
 	header { position: static; border: 0; padding: 0; }
 	h1 { font-size: 14pt; margin: 0 0 4mm; color: #111; }
-	.tabs, .screen-only, #entries-view, #file-times-view, .error, #print-warning { display: none !important; }
+	.tabs, .screen-only, #entries-view, #holidays-view, #file-times-view, .error, #print-warning { display: none !important; }
 	#report-view { display: block !important; }
 	.table-wrap { overflow: visible; max-height: none; }
 	.report-heading { padding: 0 0 2mm; }
@@ -94,6 +95,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <nav class="tabs" aria-label="Timesheet views">
 <button id="entries-tab" role="tab" aria-selected="true" aria-controls="entries-view">Entries</button>
 <button id="report-tab" role="tab" aria-selected="false" aria-controls="report-view">Period report</button>
+<button id="holidays-tab" role="tab" aria-selected="false" aria-controls="holidays-view">Public holidays</button>
 <button id="file-times-tab" role="tab" aria-selected="false" aria-controls="file-times-view">File activity</button>
 </nav>
 </header>
@@ -131,6 +133,19 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <tbody id="entries-body"></tbody>
 </table></div>
 </section>
+<section id="holidays-view" class="view" role="tabpanel" aria-labelledby="holidays-tab" hidden>
+<div class="toolbar"><div><h2>Public holidays</h2><p class="subtle">Add specific dates. Holidays label reports but do not add hours or affect estimates.</p></div></div>
+<form id="holiday-form" class="quick-add" novalidate>
+<label>Date<input id="holiday-date" type="date" required aria-describedby="holidays-error"></label>
+<label class="task">Holiday name<input id="holiday-name" type="text" maxlength="240" required aria-describedby="holidays-error"></label>
+<button class="primary" type="submit">Add holiday</button>
+</form>
+<div id="holidays-error" class="error" role="alert" aria-live="assertive"></div>
+<div class="table-wrap"><table aria-label="Public holidays">
+<thead><tr><th scope="col">Date</th><th scope="col">Holiday</th><th scope="col">Action</th></tr></thead>
+<tbody id="holidays-body"></tbody>
+</table></div>
+</section>
 <section id="file-times-view" class="view" role="tabpanel" aria-labelledby="file-times-tab" hidden>
 <div class="toolbar"><div><h2>Automatic file tracking</h2><p class="subtle">Time accumulates while VS Code is focused and a local file is active, including idle periods. Totals stay separate from timesheet reports.</p></div><div><button id="floating-timer-button" type="button">Show floating timer</button> <button id="time-card-button" class="primary" type="button">Preview time card</button></div></div>
 <div class="totals" aria-live="polite">
@@ -166,7 +181,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <script nonce="${scriptNonce}">
 const vscode = acquireVsCodeApi();
 const byId = (id) => document.getElementById(id);
-let data = { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null, paused: false, excluded: false };
+let data = { entries: {}, holidays: [], periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null, paused: false, excluded: false };
 const drafts = {}; const pendingFormEntries = {};
 let periodDraft = null; let rateDraft = null; let renderPending = false; let nextRequestId = 0;
 const dateFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -198,6 +213,16 @@ function setError(id, message) { byId(id).textContent = message || ''; }
 function entriesFor(date) {
  const value = data.entries[date];
  return Array.isArray(value) ? value : value ? [value] : [];
+}
+function holidaysFor(date) { return data.holidays.filter((holiday) => holiday.date === date); }
+function holidayLabels(date) { return holidaysFor(date).map((holiday) => '<span class="holiday-label">Public holiday: ' + esc(holiday.name) + '</span>').join(''); }
+function renderHolidays() {
+ const holidays = [...data.holidays].sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+ byId('holidays-body').innerHTML = holidays.length ? holidays.map((holiday) =>
+  '<tr><td class="date">' + esc(dateText(holiday.date)) + '</td><td>' + esc(holiday.name) + '</td><td><button type="button" data-holiday="' + esc(JSON.stringify(holiday)) + '" aria-label="Remove ' + esc(holiday.name) + ' on ' + esc(dateText(holiday.date)) + '">Remove</button></td></tr>').join('')
+  : '<tr><td colspan="3" class="subtle">No public holidays added.</td></tr>';
+ byId('holidays-body').querySelectorAll('button').forEach((button) => button.addEventListener('click', () =>
+  vscode.postMessage({ type: 'deleteHoliday', holiday: JSON.parse(button.dataset.holiday), view: 'holidays' })));
 }
 function allEntries() { return Object.values(data.entries).reduce((entries, value) => entries.concat(Array.isArray(value) ? value : value ? [value] : []), []); }
 function draftKey(date, id) { return id || 'new:' + date; }
@@ -254,7 +279,7 @@ function renderEntries() {
    const savedEntry = original.id ? original : null;
    if (savedEntry) visibleEntries.push(savedEntry);
    rows.push('<tr data-date="' + date + '" data-id="' + esc(original.id || '') + '" data-expected="' + esc(JSON.stringify(savedEntry)) + '" class="' + (incomplete ? 'incomplete ' : '') + (dateObj(date).getUTCDay() % 6 === 0 ? 'weekend' : '') + '">' +
-    '<td class="date">' + esc(dateText(date)) + (dateObj(date).getUTCDay() % 6 === 0 ? ' (Weekend)' : '') + '</td>' +
+    '<td class="date">' + esc(dateText(date)) + (dateObj(date).getUTCDay() % 6 === 0 ? ' (Weekend)' : '') + (index === 0 ? holidayLabels(date) : '') + '</td>' +
     '<td class="task"><input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="entries-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
     '<td class="time"><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="entries-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
     '<td class="time"><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="entries-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
@@ -352,7 +377,7 @@ function renderReport() {
 		const incomplete = Boolean(entry.timeIn) !== Boolean(entry.timeOut);
 		const weekday = dateObj(date).getUTCDay();
 		const savedEntry = original.id ? original : null;
-		rows.push('<tr data-date="' + date + '" data-id="' + esc(original.id || '') + '" data-expected="' + esc(JSON.stringify(savedEntry)) + '" class="' + (incomplete ? 'incomplete ' : '') + (weekday === 0 || weekday === 6 ? 'weekend' : '') + '"><td class="date">' + esc(date) + '</td><td>' + esc(new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' }).format(dateObj(date))) + '</td><td class="task"><input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="report-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"> <button type="button" class="screen-only" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + '>Discard draft</button><span class="print-task"></span></td><td><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="report-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"><span class="print-time">' + esc(entry.timeIn) + '</span></td><td><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="report-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"><span class="print-time">' + esc(entry.timeOut) + '</span></td><td class="duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td><td class="duration">' + (index === 0 ? dailyTotal : '') + '</td></tr>');
+		rows.push('<tr data-date="' + date + '" data-id="' + esc(original.id || '') + '" data-expected="' + esc(JSON.stringify(savedEntry)) + '" class="' + (incomplete ? 'incomplete ' : '') + (weekday === 0 || weekday === 6 ? 'weekend' : '') + '"><td class="date">' + esc(date) + '</td><td>' + esc(new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' }).format(dateObj(date))) + '</td><td class="task">' + (index === 0 ? holidayLabels(date) : '') + '<input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="report-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"> <button type="button" class="screen-only" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + '>Discard draft</button><span class="print-task"></span></td><td><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="report-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"><span class="print-time">' + esc(entry.timeIn) + '</span></td><td><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="report-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"><span class="print-time">' + esc(entry.timeOut) + '</span></td><td class="duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td><td class="duration">' + (index === 0 ? dailyTotal : '') + '</td></tr>');
 	}
   if (date === end) break;
   date = addDays(date, 1);
@@ -383,14 +408,24 @@ function saveEntryRow(event, errorId, view) {
   ? { type: 'saveEntry', entry, id, expected, view }
   : { type: 'createEntry', entry, requestId, view });
 }
-function render() { renderEntries(); renderSummary(); renderReport(); renderFileTimes(); }
+function render() { renderEntries(); renderSummary(); renderReport(); renderHolidays(); renderFileTimes(); }
 function setView(view) {
- byId('entries-view').hidden = view !== 'entries'; byId('report-view').hidden = view !== 'report'; byId('file-times-view').hidden = view !== 'file-times';
- byId('entries-tab').setAttribute('aria-selected', String(view === 'entries')); byId('report-tab').setAttribute('aria-selected', String(view === 'report')); byId('file-times-tab').setAttribute('aria-selected', String(view === 'file-times'));
+ byId('entries-view').hidden = view !== 'entries'; byId('report-view').hidden = view !== 'report'; byId('holidays-view').hidden = view !== 'holidays'; byId('file-times-view').hidden = view !== 'file-times';
+ byId('entries-tab').setAttribute('aria-selected', String(view === 'entries')); byId('report-tab').setAttribute('aria-selected', String(view === 'report')); byId('holidays-tab').setAttribute('aria-selected', String(view === 'holidays')); byId('file-times-tab').setAttribute('aria-selected', String(view === 'file-times'));
 }
 byId('entries-tab').addEventListener('click', () => setView('entries'));
 byId('report-tab').addEventListener('click', () => setView('report'));
+byId('holidays-tab').addEventListener('click', () => setView('holidays'));
 byId('file-times-tab').addEventListener('click', () => setView('file-times'));
+byId('holiday-date').value = localDateValue();
+byId('holiday-form').addEventListener('submit', (event) => {
+ event.preventDefault();
+ const date = byId('holiday-date'); const name = byId('holiday-name');
+ if (!validDate(date.value) || date.validity.badInput) { fieldError(date, 'holidays-error', 'Enter a valid holiday date.'); return; }
+ if (!name.value.trim() || name.value.length > 240 || /[\\x00-\\x1f\\x7f]/.test(name.value)) { fieldError(name, 'holidays-error', 'Enter a holiday name of up to 240 characters without control characters.'); return; }
+ date.removeAttribute('aria-invalid'); name.removeAttribute('aria-invalid'); setError('holidays-error', '');
+ vscode.postMessage({ type: 'addHoliday', holiday: { date: date.value, name: name.value.trim() }, view: 'holidays' });
+});
 byId('year-select').addEventListener('change', renderEntries);
 byId('summary-kind').addEventListener('change', renderSummary);
 byId('summary-date').value = localDateValue();
@@ -441,6 +476,11 @@ byId('time-card-button').addEventListener('click', () => vscode.postMessage({ ty
 byId('floating-timer-button').addEventListener('click', () => vscode.postMessage({ type: 'showFloatingTimer' }));
 window.addEventListener('message', (event) => {
  const message = event.data;
+ if (message.type === 'holidayAdded') {
+  if (byId('holiday-date').value === message.holiday.date && byId('holiday-name').value.trim() === message.holiday.name) byId('holiday-name').value = '';
+  setError('holidays-error', '');
+  return;
+ }
  if (message.type === 'entryCreated') {
   const key = Object.keys(drafts).find((candidate) => drafts[candidate].requestId === message.requestId);
   if (key) {
@@ -487,7 +527,7 @@ window.addEventListener('message', (event) => {
  if (message.type === 'fileTimes') { data.fileTimes = message.data.fileTimes; data.activeFile = message.data.activeFile; data.paused = message.data.paused; data.excluded = message.data.excluded; data.activeEligible = message.data.activeEligible; renderFileTimes(); }
  if (message.type === 'error') {
   if (message.requestId) delete pendingFormEntries[message.requestId];
-  setError(message.view === 'report' ? 'report-error' : 'entries-error', message.message);
+  setError(message.view === 'report' ? 'report-error' : message.view === 'holidays' ? 'holidays-error' : 'entries-error', message.message);
   if (Object.keys(drafts).length || periodDraft || rateDraft) {
    vscode.postMessage({ type: 'ready' });
    const active = document.activeElement;

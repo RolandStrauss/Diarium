@@ -101,6 +101,28 @@ suite('Timesheet PDF', () => {
 		assert.ok(text.includes('Total hours: 1h 00m     Days logged: 1'));
 	});
 
+	test('prints holiday names once per date without changing worked hours or estimates', async () => {
+		const entries = { '2026-10-24': [
+			{ date: '2026-10-24', task: 'Work', timeIn: '09:00', timeOut: '10:00' },
+			{ date: '2026-10-24', task: 'More work', timeIn: '10:00', timeOut: '11:00' },
+		] };
+		const holidays = [
+			{ date: '2026-10-24', name: 'Founders Day' },
+			{ date: '2026-10-24', name: 'Festival' },
+			{ date: '2026-10-25', name: 'Rest Day' },
+			{ date: '2027-10-24', name: 'Next year' },
+		];
+		const text = pdfText(await renderReportPdf({ entries, holidays, periodStart: '2026-10-21', hourlyRate: 20 })).map(item => item.text);
+		for (const name of ['Founders Day', 'Festival', 'Rest Day']) {
+			assert.strictEqual(text.filter(value => value === `Public holiday: ${name}`).length, 1);
+		}
+		assert.ok(!text.some(value => value.includes('Next year')));
+		assert.ok(text.includes('Sat (Weekend)'));
+		assert.ok(text.includes('Total hours: 2h 00m     Days logged: 1'));
+		assert.ok(text.includes('Hourly rate: 20     Estimated value (informational): 40.00'));
+		await assert.rejects(renderReportPdf({ entries, holidays: [{ date: '2026-10-24', name: 'F\u00eate' }], periodStart: '2026-10-21', hourlyRate: null }), /holiday.*unsupported characters/);
+	});
+
 	test('wraps long tasks without losing spaces or characters', async () => {
 		const task = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ '
 			+ ' Wide words  and spaces '.repeat(24);

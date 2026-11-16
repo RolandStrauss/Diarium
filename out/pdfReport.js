@@ -64,6 +64,7 @@ function renderReportPdf(data) {
         const loggedDates = new Set();
         for (let date = data.periodStart;; date = (0, timeData_1.addDays)(date, 1)) {
             const entries = entriesForDate(data.entries, date);
+            const holidays = (data.holidays ?? []).filter(holiday => holiday.date === date);
             const rowsForDate = entries.length ? entries : [{ date, task: '', timeIn: '', timeOut: '' }];
             const completed = entries.map(timeData_1.durationMinutes).filter((minutes) => minutes !== undefined);
             const dailyMinutes = completed.reduce((sum, minutes) => sum + minutes, 0);
@@ -82,20 +83,26 @@ function renderReportPdf(data) {
                 if (/[^\x20-\x7e]/.test(entry.task)) {
                     throw new Error(`Cannot generate PDF: task for ${date} contains unsupported characters; only printable ASCII is supported.`);
                 }
-                const taskLines = [];
-                let line = '';
-                for (const character of entry.task) {
-                    if (document.widthOfString(line + character) > columnWidths[2] - padding * 2) {
-                        if (!line) {
-                            throw new Error(`Cannot generate PDF: task for ${date} cannot fit in the task column.`);
-                        }
-                        taskLines.push(line);
-                        line = '';
-                    }
-                    line += character;
+                const labels = index === 0 ? holidays.map(holiday => `Public holiday: ${holiday.name}`) : [];
+                if (labels.some(label => /[^\x20-\x7e]/.test(label))) {
+                    throw new Error(`Cannot generate PDF: holiday for ${date} contains unsupported characters; only printable ASCII is supported.`);
                 }
-                if (line || !taskLines.length) {
-                    taskLines.push(line);
+                const taskLines = [];
+                for (const text of [...labels, entry.task]) {
+                    let line = '';
+                    for (const character of text) {
+                        if (document.widthOfString(line + character) > columnWidths[2] - padding * 2) {
+                            if (!line) {
+                                throw new Error(`Cannot generate PDF: task for ${date} cannot fit in the task column.`);
+                            }
+                            taskLines.push(line);
+                            line = '';
+                        }
+                        line += character;
+                    }
+                    if (line || !taskLines.length) {
+                        taskLines.push(line);
+                    }
                 }
                 const minutes = (0, timeData_1.durationMinutes)(entry);
                 const incomplete = Boolean(entry.timeIn) !== Boolean(entry.timeOut);

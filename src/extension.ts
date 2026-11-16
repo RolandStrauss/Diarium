@@ -6,8 +6,8 @@ import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
 import {
-	customPeriodEnd, formatDuration, isValidDate, validateEntry,
-	type StoredTimeEntry, type TimeEntry, type TimeEntriesByDate,
+	customPeriodEnd, formatDuration, isValidDate, validateEntry, validateHoliday,
+	type PublicHoliday, type StoredTimeEntry, type TimeEntry, type TimeEntriesByDate,
 } from './timeData';
 import { renderReportPdf } from './pdfReport';
 import { FileTimeTracker, summarizeFileTime } from './fileTimeTracker';
@@ -27,6 +27,7 @@ interface TrackerState {
 	entries: TimeEntriesByDate;
 	periodStart: string;
 	hourlyRate: number | null;
+	holidays: PublicHoliday[];
 }
 
 let fileTimeTracker: FileTimeTracker | undefined;
@@ -90,7 +91,13 @@ function parseState(stored: Partial<TrackerState> = {}): TrackerState {
 	if (hourlyRate !== null && (typeof hourlyRate !== 'number' || !Number.isFinite(hourlyRate) || hourlyRate < 0)) {
 		throw new Error('The saved hourly rate is invalid. Restore or repair the JSON file before continuing.');
 	}
-	return { entries, periodStart, hourlyRate };
+	const holidays = stored.holidays === undefined ? [] : stored.holidays;
+	if (!Array.isArray(holidays) || holidays.some(holiday =>
+		!holiday || typeof holiday !== 'object' || validateHoliday(holiday) || holiday.name !== holiday.name.trim()) ||
+		new Set(holidays.map(holiday => JSON.stringify([holiday.date, holiday.name]))).size !== holidays.length) {
+		throw new Error('The saved public holidays are invalid. Restore or repair the JSON file before continuing.');
+	}
+	return { entries, periodStart, hourlyRate, holidays };
 }
 
 function stateFile(context: vscode.ExtensionContext): string {
@@ -502,7 +509,8 @@ export function activate(context: vscode.ExtensionContext): void {
 		panel.webview.onDidReceiveMessage(async (message: {
 			type: string; entry?: TimeEntry; id?: string; expected?: StoredTimeEntry | null; date?: string;
 			requestId?: string;
-			value?: string; expectedValue?: string | number | null; view?: 'entries' | 'report';
+			value?: string; expectedValue?: string | number | null; view?: 'entries' | 'report' | 'holidays';
+			holiday?: PublicHoliday;
 		}) => {
 			if (!message || typeof message !== 'object' || typeof message.type !== 'string') {
 				void vscode.window.showErrorMessage('Invalid Time Tracker message.');
@@ -519,6 +527,33 @@ export function activate(context: vscode.ExtensionContext): void {
 				case 'ready':
 					await postState();
 					break;
+				case 'addHoliday':
+				case 'deleteHoliday': {
+					const holiday = message.holiday;
+					if (!holiday || typeof holiday !== 'object' || validateHoliday(holiday)) {
+						throw new Error('Enter a valid holiday date and name.');
+					}
+					const normalized = { date: holiday.date, name: holiday.name.trim() };
+					await changeState(state => {
+						const exists = state.holidays.some(item => item.date === normalized.date && item.name === normalized.name);
+						if (message.type === 'addHoliday' && exists) {
+							throw new Error('This holiday already exists on that date.');
+						}
+						if (message.type === 'deleteHoliday' && !exists) {
+							throw new Error('This holiday was removed in another view.');
+						}
+						return {
+							...state,
+							holidays: message.type === 'addHoliday'
+								? [...state.holidays, normalized]
+								: state.holidays.filter(item => item.date !== normalized.date || item.name !== normalized.name),
+						};
+					});
+					if (message.type === 'addHoliday') {
+						await panel.webview.postMessage({ type: 'holidayAdded', holiday: normalized });
+					}
+					break;
+				}
 				case 'createEntry':
 				case 'saveEntry': {
 					const entry = message.entry;

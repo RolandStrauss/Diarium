@@ -18,6 +18,9 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
   Overlapping ranges are allowed and summed independently.
 - Browse the 365 or 366 dates in a calendar year, filter by date or task, and review filtered totals.
 - Review daily, Monday-to-Sunday weekly, monthly, or yearly totals.
+- Use **Public holidays** to add or remove named holidays on specific dates. Multiple holidays can share a date.
+  Holidays appear in entries and period reports, including exported PDFs, but do not add hours or affect estimates.
+  Dates do not repeat automatically. PDF holiday names, like tasks, must use printable ASCII.
 - Open **Period report** to edit the 21st-to-20th reporting cycle and configure an optional hourly rate. **Print report** opens a landscape A4 PDF in your default PDF viewer; use the viewer's **Print** command to print it. A print copy is kept in extension storage without prompting for a save location. **Save as PDF** lets you choose where to save the report.
 - Timesheet PDFs use multiple landscape A4 pages when needed. Tasks support printable ASCII only; unsupported
   characters are reported instead of truncating or corrupting the report.

@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.validateHoliday = validateHoliday;
 exports.isValidDate = isValidDate;
 exports.isValidTime = isValidTime;
 exports.durationMinutes = durationMinutes;
@@ -11,6 +12,16 @@ exports.validateEntry = validateEntry;
 exports.isIncomplete = isIncomplete;
 exports.formatDuration = formatDuration;
 exports.localDateString = localDateString;
+function validateHoliday(holiday) {
+    if (!isValidDate(holiday.date)) {
+        return 'Enter a valid holiday date.';
+    }
+    if (typeof holiday.name !== 'string' || !holiday.name.trim() || holiday.name.length > 240 ||
+        /[\x00-\x1f\x7f]/.test(holiday.name)) {
+        return 'Enter a holiday name of up to 240 characters without control characters.';
+    }
+    return undefined;
+}
 function isValidDate(value) {
     if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000-')) {
         return false;

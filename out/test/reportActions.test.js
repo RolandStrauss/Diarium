@@ -345,6 +345,41 @@ suite('Report actions', () => {
         assert.deepStrictEqual(saved.entries[date].map((entry) => entry.task), ['Legacy', 'New task']);
         assert.strictEqual(new Set(saved.entries[date].map((entry) => entry.id)).size, 2);
     });
+    test('adds and removes specific holidays without overwriting entries or other holidays', async () => {
+        const result = await openTracker(undefined);
+        const date = '2026-11-01';
+        const first = { date, name: 'Founders Day' };
+        const second = { date, name: 'Festival' };
+        await result.receiveMessage({ type: 'createEntry', entry: { date, task: 'Work', timeIn: '09:00', timeOut: '10:00' }, requestId: 'entry' });
+        await result.receiveMessage({ type: 'addHoliday', holiday: first, view: 'holidays' });
+        await result.receiveMessage({ type: 'addHoliday', holiday: second, view: 'holidays' });
+        await result.receiveMessage({ type: 'addHoliday', holiday: first, view: 'holidays' });
+        assert.match(result.messages.at(-1)?.message ?? '', /already exists/);
+        await result.receiveMessage({ type: 'addHoliday', holiday: { date: '2026-02-30', name: 'Bad date' }, view: 'holidays' });
+        assert.match(result.messages.at(-1)?.message ?? '', /valid holiday/);
+        await result.receiveMessage({ type: 'deleteHoliday', holiday: first, view: 'holidays' });
+        await result.receiveMessage({ type: 'deleteHoliday', holiday: first, view: 'holidays' });
+        assert.match(result.messages.at(-1)?.message ?? '', /removed in another view/);
+        const saved = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
+        assert.deepStrictEqual(saved.holidays, [second]);
+        assert.strictEqual(saved.entries[date][0].task, 'Work');
+    });
+    test('rejects invalid saved holidays without rewriting the timesheet', async () => {
+        const file = path.join(directory, 'timesheet.json');
+        const contents = JSON.stringify({ holidays: [{ date: '2026-02-30', name: 'Holiday' }] });
+        await (0, promises_1.writeFile)(file, contents);
+        const result = await openTracker(undefined, undefined, { expectLoadFailure: true });
+        assert.match(result.errors[0], /saved public holidays are invalid/i);
+        assert.strictEqual(await (0, promises_1.readFile)(file, 'utf8'), contents);
+    });
+    test('loads saved holidays when opening an existing timesheet', async () => {
+        const holiday = { date: '2026-10-24', name: 'Festival' };
+        await (0, promises_1.writeFile)(path.join(directory, 'timesheet.json'), JSON.stringify({ holidays: [holiday] }));
+        const result = await openTracker(undefined);
+        await result.receiveMessage({ type: 'addHoliday', holiday: { date: '2026-10-25', name: 'Second day' }, view: 'holidays' });
+        const saved = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
+        assert.deepStrictEqual(saved.holidays, [holiday, { date: '2026-10-25', name: 'Second day' }]);
+    });
     test('edits and deletes one entry without changing other entries on the same date', async () => {
         const result = await openTracker(undefined);
         const date = '2026-11-01';
