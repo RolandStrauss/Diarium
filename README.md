@@ -16,6 +16,8 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
   and it stays separate from daily entries and PDF reports.
 - Record multiple task-and-time pairs per date. A time out earlier than time in is treated as an overnight shift.
   Overlapping ranges are allowed and summed independently.
+- Edits to entries and report settings stay as drafts until you choose **Save** or **Discard**.
+  Deleting an entry also requires saving its draft. Other drafts and saved values stay unchanged.
 - Browse the 365 or 366 dates in a calendar year, filter by date or task, and review filtered totals.
 - Review daily, Monday-to-Sunday weekly, monthly, or yearly totals.
 - Use **Public holidays** to add or remove named holidays on specific dates. Multiple holidays can share a date.

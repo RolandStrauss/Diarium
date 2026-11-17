@@ -164,7 +164,9 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <label>Period start<input id="period-start" type="date" aria-label="Period start date" aria-describedby="report-error"></label>
 <label>Period end<input id="period-end" type="date" readonly aria-label="Calculated period end date"></label>
 <label>Hourly rate<input id="hourly-rate" type="number" min="0" step="any" placeholder="Not set" aria-label="Hourly rate" aria-describedby="report-error"></label>
+<button id="save-period" type="button" hidden>Save period draft</button>
 <button id="discard-period" type="button" hidden>Discard period draft</button>
+<button id="save-rate" type="button" hidden>Save rate draft</button>
 <button id="discard-rate" type="button" hidden>Discard rate draft</button>
 <button id="print-button" class="primary" type="button" title="Choose print or PDF export">Print / Save PDF</button>
 </div>
@@ -280,17 +282,20 @@ function renderEntries() {
    if (savedEntry) visibleEntries.push(savedEntry);
    rows.push('<tr data-date="' + date + '" data-id="' + esc(original.id || '') + '" data-expected="' + esc(JSON.stringify(savedEntry)) + '" class="' + (incomplete ? 'incomplete ' : '') + (dateObj(date).getUTCDay() % 6 === 0 ? 'weekend' : '') + '">' +
     '<td class="date">' + esc(dateText(date)) + (dateObj(date).getUTCDay() % 6 === 0 ? ' (Weekend)' : '') + (index === 0 ? holidayLabels(date) : '') + '</td>' +
-    '<td class="task"><input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="entries-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
-    '<td class="time"><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="entries-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
-    '<td class="time"><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="entries-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"></td>' +
+    '<td class="task"><input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="entries-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"' + (drafts[key]?.pending || drafts[key]?.deleting ? ' disabled' : '') + '></td>' +
+    '<td class="time"><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="entries-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"' + (drafts[key]?.pending || drafts[key]?.deleting ? ' disabled' : '') + '></td>' +
+    '<td class="time"><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="entries-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"' + (drafts[key]?.pending || drafts[key]?.deleting ? ' disabled' : '') + '></td>' +
     '<td class="duration ' + (incomplete ? 'warning-text' : '') + '" aria-label="Entry duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td>' +
     '<td class="duration">' + (index === 0 ? dailyTotal : '') + '</td>' +
-    '<td><button type="button" data-action="delete" aria-label="Delete entry ' + (index + 1) + ' for ' + esc(dateText(date)) + '" ' + (savedEntry ? '' : 'disabled') + '>Delete</button>' +
-    ' <button type="button" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + '>Discard draft</button></td></tr>');
+    '<td><button type="button" data-action="delete" aria-label="Delete entry ' + (index + 1) + ' for ' + esc(dateText(date)) + '" ' + (savedEntry && !drafts[key]?.pending && !drafts[key]?.deleting ? '' : 'disabled') + '>Delete</button>' +
+    (drafts[key]?.deleting ? ' <span>Deletion pending</span>' : '') +
+    ' <button type="button" data-action="save" aria-label="Save draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + (drafts[key]?.pending ? ' disabled' : '') + '>Save</button>' +
+    ' <button type="button" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + (drafts[key]?.pending ? ' disabled' : '') + '>Discard</button></td></tr>');
   });
  });
  byId('entries-body').innerHTML = rows.join('');
- byId('entries-body').querySelectorAll('input').forEach((input) => { input.addEventListener('input', rememberRow); input.addEventListener('change', saveRow); });
+ byId('entries-body').querySelectorAll('input').forEach((input) => input.addEventListener('input', rememberRow));
+ byId('entries-body').querySelectorAll('[data-action="save"]').forEach((button) => button.addEventListener('click', saveRow));
  byId('entries-body').querySelectorAll('[data-action="discard"]').forEach((button) => button.addEventListener('click', discardDraft));
  byId('entries-body').querySelectorAll('[data-action="delete"]').forEach((button) => button.addEventListener('click', deleteRow));
  updateEntryTotals(visibleEntries);
@@ -301,28 +306,20 @@ function updateEntryTotals(visibleEntries) {
  byId('entry-count').textContent = String(values.length);
 }
 function saveRow(event) {
- const row = event.target.closest('tr'); const fields = { task: row.querySelector('[data-field="task"]'), timeIn: row.querySelector('[data-field="timeIn"]'), timeOut: row.querySelector('[data-field="timeOut"]') };
- const entry = { date: row.dataset.date, task: fields.task.value.trim(), timeIn: fields.timeIn.value, timeOut: fields.timeOut.value };
- const id = row.dataset.id; const key = draftKey(entry.date, id);
- const expected = JSON.parse(row.dataset.expected);
- if (!id && !entry.task && !entry.timeIn && !entry.timeOut) { delete drafts[key]; return; }
- const requestId = id ? undefined : 'row-' + (++nextRequestId);
- drafts[key] = { entry, id, expected, requestId, pending: false };
- if (!validateRow(entry, fields, 'entries-error', true)) return;
- drafts[key].pending = true;
- if (id) vscode.postMessage({ type: 'saveEntry', entry, id, expected });
- else vscode.postMessage({ type: 'createEntry', entry, requestId });
+ saveEntryRow(event, 'entries-error', 'entries');
 }
 function rememberRow(event) {
  const row = event.target.closest('tr'); const date = row.dataset.date; const id = row.dataset.id; const key = draftKey(date, id);
  const previous = drafts[key];
  drafts[key] = { entry: { date, task: row.querySelector('[data-field="task"]').value, timeIn: row.querySelector('[data-field="timeIn"]').value, timeOut: row.querySelector('[data-field="timeOut"]').value, ...(id ? { id } : {}) }, id, expected: previous ? previous.expected : JSON.parse(row.dataset.expected), requestId: previous?.requestId, pending: false };
+ const save = row.querySelector('[data-action="save"]'); if (save) save.hidden = false;
  const discard = row.querySelector('[data-action="discard"]'); if (discard) discard.hidden = false;
 }
 function deleteRow(event) {
  const row = event.target.closest('tr'); const date = row.dataset.date; const id = row.dataset.id; const key = draftKey(date, id);
- if (drafts[key]) drafts[key].deleting = true;
- vscode.postMessage({ type: 'deleteEntry', date, id, expected: JSON.parse(row.dataset.expected) });
+ const expected = drafts[key]?.expected || JSON.parse(row.dataset.expected);
+ drafts[key] = { entry: drafts[key]?.entry || expected, id, expected, deleting: true, pending: false };
+ renderEntries(); renderReport();
 }
 function discardDraft(event) {
  const row = event.target.closest('tr'); delete drafts[draftKey(row.dataset.date, row.dataset.id)]; setError('entries-error', ''); setError('report-error', ''); renderEntries(); renderReport();
@@ -360,7 +357,10 @@ function renderReport() {
  try { end = periodEnd(start); } catch (error) { fieldError(byId('period-start'), 'report-error', error.message); byId('report-body').innerHTML = ''; byId('period-end').value = ''; return; }
  byId('period-start').value = periodDraft ? periodDraft.value : start; byId('period-end').value = end;
  byId('hourly-rate').value = rateDraft ? rateDraft.value : (data.hourlyRate === null ? '' : String(data.hourlyRate));
- byId('discard-period').hidden = !periodDraft; byId('discard-rate').hidden = !rateDraft;
+ byId('save-period').hidden = byId('discard-period').hidden = !periodDraft;
+ byId('save-rate').hidden = byId('discard-rate').hidden = !rateDraft;
+ byId('period-start').disabled = byId('save-period').disabled = byId('discard-period').disabled = Boolean(periodDraft?.pending);
+ byId('hourly-rate').disabled = byId('save-rate').disabled = byId('discard-rate').disabled = Boolean(rateDraft?.pending);
  byId('report-title').textContent = 'Period report: ' + dateText(start) + ' to ' + dateText(end);
  let total = 0; const loggedDates = new Set(); const rows = [];
  for (let date = start; date <= end;) {
@@ -377,13 +377,15 @@ function renderReport() {
 		const incomplete = Boolean(entry.timeIn) !== Boolean(entry.timeOut);
 		const weekday = dateObj(date).getUTCDay();
 		const savedEntry = original.id ? original : null;
-		rows.push('<tr data-date="' + date + '" data-id="' + esc(original.id || '') + '" data-expected="' + esc(JSON.stringify(savedEntry)) + '" class="' + (incomplete ? 'incomplete ' : '') + (weekday === 0 || weekday === 6 ? 'weekend' : '') + '"><td class="date">' + esc(date) + '</td><td>' + esc(new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' }).format(dateObj(date))) + '</td><td class="task">' + (index === 0 ? holidayLabels(date) : '') + '<input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="report-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"> <button type="button" class="screen-only" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + '>Discard draft</button><span class="print-task"></span></td><td><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="report-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"><span class="print-time">' + esc(entry.timeIn) + '</span></td><td><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="report-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"><span class="print-time">' + esc(entry.timeOut) + '</span></td><td class="duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td><td class="duration">' + (index === 0 ? dailyTotal : '') + '</td></tr>');
+		const disabled = drafts[key]?.pending || drafts[key]?.deleting ? ' disabled' : '';
+		rows.push('<tr data-date="' + date + '" data-id="' + esc(original.id || '') + '" data-expected="' + esc(JSON.stringify(savedEntry)) + '" class="' + (incomplete ? 'incomplete ' : '') + (weekday === 0 || weekday === 6 ? 'weekend' : '') + '"><td class="date">' + esc(date) + '</td><td>' + esc(new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' }).format(dateObj(date))) + '</td><td class="task">' + (index === 0 ? holidayLabels(date) : '') + '<input data-field="task" value="' + esc(entry.task) + '" maxlength="240" aria-describedby="report-error" aria-label="Task for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"' + disabled + '> ' + (drafts[key]?.deleting ? '<span class="screen-only">Deletion pending</span> ' : '') + '<button type="button" class="screen-only" data-action="save" aria-label="Save draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + (drafts[key]?.pending ? ' disabled' : '') + '>Save</button> <button type="button" class="screen-only" data-action="discard" aria-label="Discard draft for ' + esc(dateText(date)) + '"' + (drafts[key] ? '' : ' hidden') + (drafts[key]?.pending ? ' disabled' : '') + '>Discard</button><span class="print-task"></span></td><td><input data-field="timeIn" type="time" step="60" value="' + esc(entry.timeIn) + '" aria-describedby="report-error" aria-label="Time In for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"' + disabled + '><span class="print-time">' + esc(entry.timeIn) + '</span></td><td><input data-field="timeOut" type="time" step="60" value="' + esc(entry.timeOut) + '" aria-describedby="report-error" aria-label="Time Out for ' + esc(dateText(date)) + ', entry ' + (index + 1) + '"' + disabled + '><span class="print-time">' + esc(entry.timeOut) + '</span></td><td class="duration">' + (value === null ? (incomplete ? 'Incomplete' : '—') : durationText(value)) + '</td><td class="duration">' + (index === 0 ? dailyTotal : '') + '</td></tr>');
 	}
   if (date === end) break;
   date = addDays(date, 1);
  }
  byId('report-body').innerHTML = rows.join('');
- byId('report-body').querySelectorAll('input').forEach((input) => { input.addEventListener('input', rememberRow); input.addEventListener('change', saveReportRow); });
+ byId('report-body').querySelectorAll('input').forEach((input) => input.addEventListener('input', rememberRow));
+ byId('report-body').querySelectorAll('[data-action="save"]').forEach((button) => button.addEventListener('click', saveReportRow));
  byId('report-body').querySelectorAll('[data-action="discard"]').forEach((button) => button.addEventListener('click', discardDraft));
  byId('report-body').querySelectorAll('tr').forEach((row) => row.querySelector('.print-task').textContent = row.querySelector('[data-field="task"]').value);
  const days = loggedDates.size;
@@ -398,12 +400,19 @@ function saveReportRow(event) {
 function saveEntryRow(event, errorId, view) {
  const row = event.target.closest('tr'); const fields = { task: row.querySelector('[data-field="task"]'), timeIn: row.querySelector('[data-field="timeIn"]'), timeOut: row.querySelector('[data-field="timeOut"]') };
  const entry = { date: row.dataset.date, task: fields.task.value.trim(), timeIn: fields.timeIn.value, timeOut: fields.timeOut.value };
- const id = row.dataset.id; const key = draftKey(entry.date, id); const expected = JSON.parse(row.dataset.expected);
+ const id = row.dataset.id; const key = draftKey(entry.date, id); const draft = drafts[key]; const expected = draft ? draft.expected : JSON.parse(row.dataset.expected);
+ if (draft?.pending) return;
+ if (draft?.deleting) {
+  draft.pending = true; renderEntries(); renderReport();
+  vscode.postMessage({ type: 'deleteEntry', date: entry.date, id, expected, view }); return;
+ }
  const requestId = id ? undefined : 'row-' + (++nextRequestId);
  drafts[key] = { entry, id, expected, requestId, pending: false };
  if (!validateRow(entry, fields, errorId, true)) return;
- if (!id && !entry.task && !entry.timeIn && !entry.timeOut) { delete drafts[key]; return; }
+ if (!id && !entry.task && !entry.timeIn && !entry.timeOut) { delete drafts[key]; renderEntries(); renderReport(); return; }
  drafts[key].pending = true;
+ if (id && !entry.task && !entry.timeIn && !entry.timeOut) drafts[key].deleting = true;
+ renderEntries(); renderReport();
  vscode.postMessage(id
   ? { type: 'saveEntry', entry, id, expected, view }
   : { type: 'createEntry', entry, requestId, view });
@@ -445,25 +454,25 @@ byId('add-form').addEventListener('submit', (event) => {
 });
 byId('period-start').addEventListener('input', () => {
  periodDraft = { value: byId('period-start').value, expectedValue: periodDraft ? periodDraft.expectedValue : data.periodStart, pending: false };
- byId('discard-period').hidden = false;
+ byId('save-period').hidden = byId('discard-period').hidden = false;
 });
-byId('period-start').addEventListener('change', () => {
+byId('save-period').addEventListener('click', () => {
  const input = byId('period-start');
  periodDraft = periodDraft || { value: input.value, expectedValue: data.periodStart, pending: false };
  periodDraft.value = input.value;
  try { periodEnd(input.value); } catch (error) { fieldError(input, 'report-error', error.message); return; }
- input.removeAttribute('aria-invalid'); setError('report-error', ''); periodDraft.pending = true;
+ input.removeAttribute('aria-invalid'); setError('report-error', ''); periodDraft.pending = true; renderReport();
  vscode.postMessage({ type: 'setPeriodStart', value: input.value, expectedValue: periodDraft.expectedValue });
 });
 byId('hourly-rate').addEventListener('input', () => {
  rateDraft = { value: byId('hourly-rate').value, expectedValue: rateDraft ? rateDraft.expectedValue : data.hourlyRate, pending: false };
- byId('discard-rate').hidden = false;
+ byId('save-rate').hidden = byId('discard-rate').hidden = false;
 });
-byId('hourly-rate').addEventListener('change', () => {
+byId('save-rate').addEventListener('click', () => {
  const input = byId('hourly-rate'); const value = input.value;
  rateDraft = rateDraft || { value, expectedValue: data.hourlyRate, pending: false }; rateDraft.value = value;
  if (input.validity.badInput || (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0))) { fieldError(input, 'report-error', 'Enter a valid hourly rate of zero or more.'); return; }
- input.removeAttribute('aria-invalid'); setError('report-error', ''); rateDraft.pending = true;
+ input.removeAttribute('aria-invalid'); setError('report-error', ''); rateDraft.pending = true; renderReport();
  vscode.postMessage({ type: 'setHourlyRate', value, expectedValue: rateDraft.expectedValue });
 });
 byId('discard-period').addEventListener('click', () => { periodDraft = null; setError('report-error', ''); renderReport(); });
@@ -511,7 +520,7 @@ window.addEventListener('message', (event) => {
   Object.keys(drafts).forEach((key) => {
    const draft = drafts[key];
    const saved = draft.id ? entriesFor(draft.entry.date).find((entry) => entry.id === draft.id) : undefined;
-   if ((draft.deleting && !saved) || (draft.pending && saved && sameEntry(saved, { ...draft.entry, id: draft.id }))) delete drafts[key];
+   if ((draft.pending && draft.deleting && !saved) || (draft.pending && saved && sameEntry(saved, { ...draft.entry, id: draft.id }))) delete drafts[key];
   });
   if (Object.keys(drafts).some((key) => drafts[key].id && !sameEntry(drafts[key].expected, entriesFor(drafts[key].entry.date).find((entry) => entry.id === drafts[key].id)))) {
    const text = 'An entry changed elsewhere. Your draft is retained; copy it or discard it before editing the latest entry.';
@@ -527,6 +536,13 @@ window.addEventListener('message', (event) => {
  if (message.type === 'fileTimes') { data.fileTimes = message.data.fileTimes; data.activeFile = message.data.activeFile; data.paused = message.data.paused; data.excluded = message.data.excluded; data.activeEligible = message.data.activeEligible; renderFileTimes(); }
  if (message.type === 'error') {
   if (message.requestId) delete pendingFormEntries[message.requestId];
+  if (message.operation === 'saveEntry' || message.operation === 'deleteEntry' || message.operation === 'createEntry') {
+   const draft = Object.values(drafts).find((item) => message.operation === 'createEntry'
+    ? item.requestId === message.requestId : item.id === message.id);
+   if (draft) draft.pending = false;
+  }
+  if (message.operation === 'setPeriodStart' && periodDraft) periodDraft.pending = false;
+  if (message.operation === 'setHourlyRate' && rateDraft) rateDraft.pending = false;
   setError(message.view === 'report' ? 'report-error' : message.view === 'holidays' ? 'holidays-error' : 'entries-error', message.message);
   if (Object.keys(drafts).length || periodDraft || rateDraft) {
    vscode.postMessage({ type: 'ready' });

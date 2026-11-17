@@ -698,6 +698,8 @@ export function activate(context: vscode.ExtensionContext): void {
 				const reason = error instanceof Error ? error.message : String(error);
 				await panel.webview.postMessage({
 					type: 'error',
+					operation: message.type,
+					id: message.id,
 					requestId: message.requestId,
 					view: message.view ?? (message.type === 'setPeriodStart' || message.type === 'setHourlyRate' ? 'report' : 'entries'),
 					message: reason,

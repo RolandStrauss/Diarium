@@ -41,6 +41,7 @@ suite('Manual timesheet', () => {
 		textContent = '';
 		innerHTML = '';
 		hidden = false;
+		disabled = false;
 		dataset: Record<string, string> = {};
 		validity = { badInput: false };
 		listeners: Record<string, (event: any) => void> = {};
@@ -143,14 +144,19 @@ suite('Manual timesheet', () => {
 		ui.element('period-start').value = '2026-01-31'; ui.element('period-start').dispatch('input');
 		ui.send('saved', { ...state, periodStart: '2026-11-21' });
 		assert.strictEqual(ui.element('period-start').value, '2026-01-31');
+		const count = ui.messages.length;
 		ui.element('period-start').dispatch('change');
+		assert.strictEqual(ui.messages.length, count);
+		ui.element('save-period').dispatch('click');
 		assert.deepStrictEqual({ ...ui.messages.at(-1) }, { type: 'setPeriodStart', value: '2026-01-31', expectedValue: '2026-10-21' });
 		ui.element('hourly-rate').value = '12.5'; ui.element('hourly-rate').dispatch('input');
 		ui.send('saved', { ...state, periodStart: '2026-11-21', hourlyRate: 15 });
 		assert.strictEqual(ui.element('hourly-rate').value, '12.5');
-		ui.element('hourly-rate').dispatch('change');
+		ui.element('save-rate').dispatch('click');
 		assert.deepStrictEqual({ ...ui.messages.at(-1) }, { type: 'setHourlyRate', value: '12.5', expectedValue: 10 });
-		ui.element('period-start').value = '9999-12-02'; ui.element('period-start').dispatch('change');
+		ui.deliver({ type: 'error', operation: 'setPeriodStart', view: 'report', message: 'Conflict' });
+		ui.element('period-start').value = '9999-12-02'; ui.element('period-start').dispatch('input');
+		ui.element('save-period').dispatch('click');
 		assert.match(ui.element('report-error').textContent, /four-digit/);
 	});
 
@@ -193,13 +199,94 @@ suite('Manual timesheet', () => {
 			entry: { date: original.date, task: 'My unsaved draft', timeIn: original.timeIn, timeOut: original.timeOut },
 			id: original.id,
 			expected: original,
+			view: 'entries',
 		});
+		ui.deliver({ type: 'error', operation: 'saveEntry', id: original.id, view: 'entries', message: 'Conflict' });
 		vm.runInContext('deleteRow(rowEvent)', ui.context);
+		vm.runInContext('saveRow(rowEvent)', ui.context);
 		assert.deepStrictEqual(JSON.parse(JSON.stringify(ui.messages.at(-1))), {
-			type: 'deleteEntry', date: original.date, id: original.id, expected: original,
+			type: 'deleteEntry', date: original.date, id: original.id, expected: original, view: 'entries',
 		});
 		ui.send('saved', { ...state, entries: { [original.date]: [changed] } });
 		assert.match(ui.element('report-body').innerHTML, /My unsaved draft/);
+	});
+
+	test('discards only the selected entry or report setting without saving other drafts', () => {
+		const ui = frontend();
+		const first = { id: 'first', date: '2026-10-21', task: 'First', timeIn: '09:00', timeOut: '10:00' };
+		const second = { id: 'second', date: '2026-10-22', task: 'Second', timeIn: '10:00', timeOut: '11:00' };
+		ui.send('state', { entries: { [first.date]: [first], [second.date]: [second] }, periodStart: '2026-10-21', hourlyRate: 10, fileTimes: {}, activeFile: null });
+		const makeRow = (entry: typeof first, value: string) => {
+			const task = new Element(); task.value = value;
+			const timeIn = new Element(); timeIn.value = entry.timeIn;
+			const timeOut = new Element(); timeOut.value = entry.timeOut;
+			const button = new Element();
+			return {
+				dataset: { date: entry.date, id: entry.id, expected: JSON.stringify(entry) },
+				querySelector: (selector: string) => selector.includes('"task"') ? task
+					: selector.includes('"timeIn"') ? timeIn : selector.includes('"timeOut"') ? timeOut : button,
+			};
+		};
+		ui.context.firstEvent = { target: { closest: () => makeRow(first, 'First draft') } };
+		ui.context.secondEvent = { target: { closest: () => makeRow(second, 'Second draft') } };
+		const count = ui.messages.length;
+		vm.runInContext('rememberRow(firstEvent); rememberRow(secondEvent)', ui.context);
+		ui.element('period-start').value = '2026-11-21'; ui.element('period-start').dispatch('input');
+		ui.element('hourly-rate').value = '20'; ui.element('hourly-rate').dispatch('input');
+		assert.strictEqual(ui.messages.length, count);
+		vm.runInContext('discardDraft(firstEvent)', ui.context);
+		assert.doesNotMatch(ui.element('report-body').innerHTML, /First draft/);
+		assert.match(ui.element('report-body').innerHTML, /Second draft/);
+		ui.element('discard-period').dispatch('click');
+		assert.strictEqual(ui.element('period-start').value, '2026-10-21');
+		assert.strictEqual(ui.element('hourly-rate').value, '20');
+		assert.match(ui.element('report-body').innerHTML, /Second draft/);
+		ui.element('discard-rate').dispatch('click');
+		assert.strictEqual(ui.element('hourly-rate').value, '10');
+		assert.match(ui.element('report-body').innerHTML, /Second draft/);
+		vm.runInContext('saveReportRow(secondEvent)', ui.context);
+		assert.strictEqual(ui.messages.at(-1).type, 'saveEntry');
+		assert.strictEqual(ui.messages.at(-1).view, 'report');
+		assert.strictEqual(ui.messages.at(-1).entry.task, 'Second draft');
+	});
+
+	test('a failed save unlocks only its own draft', () => {
+		const ui = frontend();
+		ui.send('state', { entries: {}, periodStart: '2026-10-21', hourlyRate: 10, fileTimes: {}, activeFile: null });
+		ui.element('period-start').value = '2026-11-21'; ui.element('period-start').dispatch('input');
+		ui.element('hourly-rate').value = '20'; ui.element('hourly-rate').dispatch('input');
+		ui.element('save-period').dispatch('click');
+		ui.element('save-rate').dispatch('click');
+		ui.deliver({ type: 'error', operation: 'setPeriodStart', view: 'report', message: 'Save failed' });
+		assert.strictEqual(ui.element('save-period').disabled, false);
+		assert.strictEqual(ui.element('save-rate').disabled, true);
+		assert.strictEqual(ui.element('period-start').value, '2026-11-21');
+		assert.strictEqual(ui.element('hourly-rate').value, '20');
+	});
+
+	test('stages deletion until saved and discards it without sending a write', () => {
+		const ui = frontend();
+		const entry = { id: 'entry-1', date: '2026-10-21', task: 'Work', timeIn: '09:00', timeOut: '10:00' };
+		ui.send('state', { entries: { [entry.date]: [entry] }, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
+		const task = new Element(); task.value = entry.task;
+		const timeIn = new Element(); timeIn.value = entry.timeIn;
+		const timeOut = new Element(); timeOut.value = entry.timeOut;
+		const row = {
+			dataset: { date: entry.date, id: entry.id, expected: JSON.stringify(entry) },
+			querySelector: (selector: string) => selector.includes('"task"') ? task : selector.includes('"timeIn"') ? timeIn : timeOut,
+		};
+		ui.context.rowEvent = { target: { closest: () => row } };
+		const count = ui.messages.length;
+		vm.runInContext('deleteRow(rowEvent)', ui.context);
+		assert.strictEqual(ui.messages.length, count);
+		assert.match(ui.element('report-body').innerHTML, /Deletion pending/);
+		vm.runInContext('discardDraft(rowEvent)', ui.context);
+		assert.strictEqual(ui.messages.length, count);
+		assert.doesNotMatch(ui.element('report-body').innerHTML, /Deletion pending/);
+		vm.runInContext('deleteRow(rowEvent); saveRow(rowEvent)', ui.context);
+		assert.strictEqual(ui.messages.at(-1).type, 'deleteEntry');
+		ui.send('saved', { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
+		assert.doesNotMatch(ui.element('report-body').innerHTML, /Deletion pending/);
 	});
 
 	test('allows multiple entries per date and rejects invalid dates', () => {
