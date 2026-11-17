@@ -250,6 +250,35 @@ suite('Manual timesheet', () => {
 		assert.strictEqual(ui.messages.at(-1).entry.task, 'Second draft');
 	});
 
+	test('keeps entry drafts in sync when switching between entries and report', () => {
+		const ui = frontend();
+		const entry = { id: 'entry-1', date: '2026-10-21', task: 'Original', timeIn: '09:00', timeOut: '17:00' };
+		ui.send('state', { entries: { [entry.date]: [entry] }, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
+		ui.element('filter-date').value = entry.date; ui.element('filter-date').dispatch('change');
+		const task = new Element(); task.value = 'Draft task';
+		const timeIn = new Element(); timeIn.value = entry.timeIn;
+		const timeOut = new Element(); timeOut.value = entry.timeOut;
+		const button = new Element();
+		const row = {
+			dataset: { date: entry.date, id: entry.id, expected: JSON.stringify(entry) },
+			querySelector: (selector: string) => selector.includes('"task"') ? task
+				: selector.includes('"timeIn"') ? timeIn : selector.includes('"timeOut"') ? timeOut : button,
+		};
+		ui.context.rowEvent = { target: { closest: () => row } };
+		vm.runInContext('rememberRow(rowEvent)', ui.context);
+		ui.element('report-view').hidden = true;
+		ui.element('report-tab').dispatch('click');
+		assert.match(ui.element('report-body').innerHTML, /value="Draft task"/);
+		timeOut.value = '18:00';
+		vm.runInContext('rememberRow(rowEvent)', ui.context);
+		ui.element('entries-tab').dispatch('click');
+		assert.match(ui.element('entries-body').innerHTML, /value="Draft task"/);
+		assert.match(ui.element('entries-body').innerHTML, /value="18:00"/);
+		vm.runInContext('saveRow(rowEvent)', ui.context);
+		assert.strictEqual(ui.messages.at(-1).entry.task, 'Draft task');
+		assert.strictEqual(ui.messages.at(-1).entry.timeOut, '18:00');
+	});
+
 	test('a failed save unlocks only its own draft', () => {
 		const ui = frontend();
 		ui.send('state', { entries: {}, periodStart: '2026-10-21', hourlyRate: 10, fileTimes: {}, activeFile: null });

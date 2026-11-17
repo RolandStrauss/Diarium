@@ -410,6 +410,8 @@ function saveEntryRow(event, errorId, view) {
 }
 function render() { renderEntries(); renderSummary(); renderReport(); renderHolidays(); renderFileTimes(); }
 function setView(view) {
+ if (view === 'entries' && byId('entries-view').hidden) renderEntries();
+ if (view === 'report' && byId('report-view').hidden) renderReport();
  byId('entries-view').hidden = view !== 'entries'; byId('report-view').hidden = view !== 'report'; byId('holidays-view').hidden = view !== 'holidays'; byId('file-times-view').hidden = view !== 'file-times';
  byId('entries-tab').setAttribute('aria-selected', String(view === 'entries')); byId('report-tab').setAttribute('aria-selected', String(view === 'report')); byId('holidays-tab').setAttribute('aria-selected', String(view === 'holidays')); byId('file-times-tab').setAttribute('aria-selected', String(view === 'file-times'));
 }
