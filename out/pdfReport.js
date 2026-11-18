@@ -119,17 +119,12 @@ function renderReportPdf(data) {
                 break;
             }
         }
-        const estimate = data.hourlyRate === null ? null : totalMinutes / 60 * data.hourlyRate;
-        if (estimate !== null && (!Number.isFinite(estimate) || estimate >= 1e21)) {
-            throw new Error('Cannot generate PDF: estimated value is too large to display to two decimal places.');
-        }
         const summary = `Total hours: ${(0, timeData_1.formatDuration)(totalMinutes)}     Days logged: ${loggedDates.size}`;
-        const rate = estimate === null ? null : `Hourly rate: ${data.hourlyRate}     Estimated value (informational): ${estimate.toFixed(2)}`;
         const footer = `Generated ${displayDate(new Date().toISOString().slice(0, 10))}. Weekend and incomplete entries are labeled.`;
         const headers = ['Date', 'Day', 'Task', 'Time In', 'Time Out', 'Entry duration', 'Daily total'];
         const period = `Reporting period: ${displayDate(data.periodStart)} to ${displayDate(end)}`;
         const headerHeight = lineHeight + rowPadding;
-        const summaryHeight = 8 + 14 + (rate === null ? 0 : 14) + lineHeight;
+        const summaryHeight = 8 + 14 + lineHeight;
         document.font('Helvetica-Bold').fontSize(7.5);
         if (headers.some((value, index) => document.widthOfString(value) > columnWidths[index] - padding * 2)) {
             throw new Error('Cannot generate PDF: a column heading does not fit.');
@@ -140,7 +135,7 @@ function renderReportPdf(data) {
                 throw new Error('Cannot generate PDF: a report value does not fit in its column.');
             }
         }
-        if ((rate !== null && document.widthOfString(rate) > pageWidth) || document.widthOfString(footer) > pageWidth) {
+        if (document.widthOfString(footer) > pageWidth) {
             throw new Error('Cannot generate PDF: report summary does not fit on the page.');
         }
         document.font('Helvetica-Bold').fontSize(9);
@@ -224,11 +219,6 @@ function renderReportPdf(data) {
         document.font('Helvetica-Bold').fontSize(9).fillColor('#202020')
             .text(summary, left, y, { lineBreak: false });
         y += 14;
-        if (rate !== null) {
-            document.font('Helvetica').fontSize(7.5)
-                .text(rate, left, y, { lineBreak: false });
-            y += 14;
-        }
         document.font('Helvetica').fontSize(7.5).fillColor('#555555')
             .text(footer, left, y, { lineBreak: false });
         document.end();

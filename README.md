@@ -24,6 +24,7 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
   Holidays appear in entries and period reports, including exported PDFs, but do not add hours or affect estimates.
   Dates do not repeat automatically. PDF holiday names, like tasks, must use printable ASCII.
 - Open **Period report** to edit the 21st-to-20th reporting cycle and configure an optional hourly rate. **Print report** opens a landscape A4 PDF in your default PDF viewer; use the viewer's **Print** command to print it. A print copy is kept in extension storage without prompting for a save location. **Save as PDF** lets you choose where to save the report.
+- The hourly rate and estimated value stay on screen and are omitted from printed and PDF reports.
 - Timesheet PDFs use multiple landscape A4 pages when needed. Tasks support printable ASCII only; unsupported
   characters are reported instead of truncating or corrupting the report.
 - Incomplete time pairs are highlighted and excluded from totals. Entries and preferences are saved as JSON in VS Code extension storage and persist across restarts; existing extension-stored data is migrated automatically.

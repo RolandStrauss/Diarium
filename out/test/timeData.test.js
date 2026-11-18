@@ -462,6 +462,13 @@ suite('Manual timesheet', () => {
         assert.strictEqual(ui.messages.length, count);
         assert.match(ui.element('report-error').textContent, /Save or discard unsaved changes/);
     });
+    test('shows the estimate on screen but hides it in print media', () => {
+        const ui = frontend();
+        const entry = { id: 'entry-1', date: '2026-10-21', task: 'Work', timeIn: '09:00', timeOut: '10:00' };
+        ui.send('state', { entries: { [entry.date]: [entry] }, periodStart: entry.date, hourlyRate: 25, fileTimes: {}, activeFile: null });
+        assert.match(ui.element('print-summary').innerHTML, /<div class="metric screen-only"><strong>25[.,]00<\/strong><span>Estimated value \(informational\)<\/span><\/div>/);
+        assert.match((0, webview_1.getWebviewHtml)({ cspSource: 'test' }), /@media print\s*\{[\s\S]*?\.screen-only[^{]*\{[^}]*display:\s*none\s*!important/);
+    });
     test('counts only positive or currently eligible file rows', () => {
         const ui = frontend();
         const state = { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: { a: 0, b: 60000 }, activeFile: 'a', paused: false, excluded: false };

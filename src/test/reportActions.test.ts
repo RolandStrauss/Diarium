@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { runInNewContext } from 'node:vm';
-import type { PublicHoliday, TimeEntry } from '../timeData';
+import type { PublicHoliday, StoredTimeEntry, TimeEntriesByDate, TimeEntry } from '../timeData';
 
 interface TestMessage {
 	type: string;
@@ -15,6 +15,7 @@ interface TestMessage {
 	date?: string;
 	requestId?: string;
 	value?: string;
+	expectedValue?: string | number | null;
 	view?: 'entries' | 'report' | 'holidays';
 	holiday?: PublicHoliday;
 }
@@ -41,7 +42,7 @@ suite('Report actions', () => {
 		const opened: { fsPath: string }[] = [];
 		const errors: string[] = [];
 		const information: string[] = [];
-		const messages: { type: string; message?: string; totalTime?: string; currentTime?: string; currentFile?: string; paused?: boolean; status?: string }[] = [];
+		const messages: { type: string; data?: unknown; message?: string; totalTime?: string; currentTime?: string; currentFile?: string; paused?: boolean; status?: string }[] = [];
 		const intervals = new Map<number, { callback: () => void; milliseconds: number }>();
 		let nextInterval = 0;
 		let now = Date.now();
@@ -133,7 +134,7 @@ suite('Report actions', () => {
 		};
 		const filename = path.join(__dirname, '..', 'extension.js');
 		const realRequire = createRequire(filename);
-		const module = { exports: {} as { activate(extensionContext: typeof context): void } };
+		const module = { exports: {} as { activate(extensionContext: typeof context): void; deactivate(): Promise<void> } };
 		runInNewContext(await readFile(filename, 'utf8'), {
 			module,
 			exports: module.exports,
@@ -160,7 +161,7 @@ suite('Report actions', () => {
 		const receiver = receiveMessage ?? (async () => { throw new Error('No webview receiver registered'); });
 		return { opened, errors, information, messages, saveDialogs, receiveMessage: receiver, statusBarItems,
 			getHtml: () => html, getReceiver: () => receiveMessage!,
-			commands, intervals, api, context, activityWrites,
+			commands, intervals, api, context, activityWrites, deactivate: module.exports.deactivate,
 			getPanelCount: () => panelsCreated, getReveals: () => reveals, getWrites: () => writes,
 			failPersistence: () => { failPersistence = true; },
 			advance: (milliseconds: number) => { now += milliseconds; },
@@ -294,6 +295,38 @@ suite('Report actions', () => {
 		assert.match(result.messages.at(-1)?.message ?? '', /changed in another view/);
 		const current = JSON.parse(await readFile(path.join(directory, 'timesheet.json'), 'utf8'));
 		assert.strictEqual(current.entries[entry.date][0].task, 'Changed elsewhere');
+	});
+
+	test('restores saved entries and report settings after extension restart', async () => {
+		const first = await openTracker(undefined);
+		const entry = { date: '2026-11-01', task: 'Work', timeIn: '09:00', timeOut: '' };
+		const secondEntry = { date: entry.date, task: 'Review', timeIn: '10:00', timeOut: '11:00' };
+		const holiday = { date: entry.date, name: 'Holiday' };
+		await first.receiveMessage({ type: 'createEntry', entry, requestId: 'entry' });
+		await first.receiveMessage({ type: 'createEntry', entry: secondEntry, requestId: 'second-entry' });
+		await first.receiveMessage({ type: 'setPeriodStart', value: '2026-11-21', expectedValue: '2026-10-21' });
+		await first.receiveMessage({ type: 'setHourlyRate', value: '42.5', expectedValue: null });
+		await first.receiveMessage({ type: 'addHoliday', holiday });
+		const saved: { entries: TimeEntriesByDate; periodStart: string; hourlyRate: number | null; holidays: PublicHoliday[] } =
+			JSON.parse(await readFile(path.join(directory, 'timesheet.json'), 'utf8'));
+		await first.deactivate();
+
+		const second = await openTracker(undefined);
+		await second.receiveMessage({ type: 'ready' });
+		const restored = second.messages.at(-1)?.data as typeof saved;
+		assert.deepStrictEqual(JSON.parse(JSON.stringify({
+			entries: restored.entries,
+			periodStart: restored.periodStart,
+			hourlyRate: restored.hourlyRate,
+			holidays: restored.holidays,
+		})), saved);
+		assert.deepStrictEqual(JSON.parse(JSON.stringify(restored.entries[entry.date].map(
+			({ date, task, timeIn, timeOut }: StoredTimeEntry) => ({ date, task, timeIn, timeOut }),
+		))), [entry, secondEntry]);
+		assert.strictEqual(restored.periodStart, '2026-11-21');
+		assert.strictEqual(restored.hourlyRate, 42.5);
+		assert.deepStrictEqual(JSON.parse(JSON.stringify(restored.holidays)), [holiday]);
+		await second.deactivate();
 	});
 
 	test('a failed timesheet write leaves prior data intact and allows retry', async () => {

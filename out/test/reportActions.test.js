@@ -181,7 +181,7 @@ suite('Report actions', () => {
         const receiver = receiveMessage ?? (async () => { throw new Error('No webview receiver registered'); });
         return { opened, errors, information, messages, saveDialogs, receiveMessage: receiver, statusBarItems,
             getHtml: () => html, getReceiver: () => receiveMessage,
-            commands, intervals, api, context, activityWrites,
+            commands, intervals, api, context, activityWrites, deactivate: module.exports.deactivate,
             getPanelCount: () => panelsCreated, getReveals: () => reveals, getWrites: () => writes,
             failPersistence: () => { failPersistence = true; },
             advance: (milliseconds) => { now += milliseconds; },
@@ -312,6 +312,33 @@ suite('Report actions', () => {
         assert.match(result.messages.at(-1)?.message ?? '', /changed in another view/);
         const current = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
         assert.strictEqual(current.entries[entry.date][0].task, 'Changed elsewhere');
+    });
+    test('restores saved entries and report settings after extension restart', async () => {
+        const first = await openTracker(undefined);
+        const entry = { date: '2026-11-01', task: 'Work', timeIn: '09:00', timeOut: '' };
+        const secondEntry = { date: entry.date, task: 'Review', timeIn: '10:00', timeOut: '11:00' };
+        const holiday = { date: entry.date, name: 'Holiday' };
+        await first.receiveMessage({ type: 'createEntry', entry, requestId: 'entry' });
+        await first.receiveMessage({ type: 'createEntry', entry: secondEntry, requestId: 'second-entry' });
+        await first.receiveMessage({ type: 'setPeriodStart', value: '2026-11-21', expectedValue: '2026-10-21' });
+        await first.receiveMessage({ type: 'setHourlyRate', value: '42.5', expectedValue: null });
+        await first.receiveMessage({ type: 'addHoliday', holiday });
+        const saved = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
+        await first.deactivate();
+        const second = await openTracker(undefined);
+        await second.receiveMessage({ type: 'ready' });
+        const restored = second.messages.at(-1)?.data;
+        assert.deepStrictEqual(JSON.parse(JSON.stringify({
+            entries: restored.entries,
+            periodStart: restored.periodStart,
+            hourlyRate: restored.hourlyRate,
+            holidays: restored.holidays,
+        })), saved);
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(restored.entries[entry.date].map(({ date, task, timeIn, timeOut }) => ({ date, task, timeIn, timeOut })))), [entry, secondEntry]);
+        assert.strictEqual(restored.periodStart, '2026-11-21');
+        assert.strictEqual(restored.hourlyRate, 42.5);
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(restored.holidays)), [holiday]);
+        await second.deactivate();
     });
     test('a failed timesheet write leaves prior data intact and allows retry', async () => {
         const result = await openTracker(undefined);

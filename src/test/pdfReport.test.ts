@@ -62,7 +62,7 @@ suite('Timesheet PDF', () => {
 		}
 	});
 
-	test('shows complete, overnight, zero, incomplete and task-only entries, labels and estimate', async () => {
+	test('shows complete, overnight, zero, incomplete and task-only entries without financial values', async () => {
 		const entries: Record<string, TimeEntry[]> = {
 			'2026-10-24': [
 				{ date: '2026-10-24', task: 'Weekend work', timeIn: '22:30', timeOut: '01:15' },
@@ -75,13 +75,15 @@ suite('Timesheet PDF', () => {
 		const text = pdfText(await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: 20 }));
 		for (const expected of ['Sat (Weekend)', 'Sun (Weekend)', 'INCOMPLETE', 'Weekend work', 'Partial',
 			'Overlapping task', 'Task only', 'Entry duration', 'Daily total', '22:30', '01:15', '1h 00m', '3h 45m', '0h 00m',
-			'Total hours: 3h 45m     Days logged: 2',
-			'Hourly rate: 20     Estimated value (informational): 75.00']) {
+			'Total hours: 3h 45m     Days logged: 2']) {
 			assert.ok(text.some(item => item.text === expected), expected);
 		}
 		assert.strictEqual(text.filter(item => item.text === '3h 45m').length, 1);
-		const zeroRate = pdfText(await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: 0 }));
-		assert.ok(zeroRate.some(item => item.text === 'Hourly rate: 0     Estimated value (informational): 0.00'));
+		for (const hourlyRate of [null, 0, 20, 1e21]) {
+			const report = pdfText(await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate }));
+			assert.deepStrictEqual(report.map(item => item.text), text.map(item => item.text));
+			assert.ok(!report.some(item => /Hourly rate|Estimated value/.test(item.text)));
+		}
 	});
 
 	test('paginates multiple entries per date without dropping entries', async () => {
@@ -101,7 +103,7 @@ suite('Timesheet PDF', () => {
 		assert.ok(text.includes('Total hours: 1h 00m     Days logged: 1'));
 	});
 
-	test('prints holiday names once per date without changing worked hours or estimates', async () => {
+	test('prints holiday names once per date without changing worked hours', async () => {
 		const entries = { '2026-10-24': [
 			{ date: '2026-10-24', task: 'Work', timeIn: '09:00', timeOut: '10:00' },
 			{ date: '2026-10-24', task: 'More work', timeIn: '10:00', timeOut: '11:00' },
@@ -119,7 +121,6 @@ suite('Timesheet PDF', () => {
 		assert.ok(!text.some(value => value.includes('Next year')));
 		assert.ok(text.includes('Sat (Weekend)'));
 		assert.ok(text.includes('Total hours: 2h 00m     Days logged: 1'));
-		assert.ok(text.includes('Hourly rate: 20     Estimated value (informational): 40.00'));
 		await assert.rejects(renderReportPdf({ entries, holidays: [{ date: '2026-10-24', name: 'F\u00eate' }], periodStart: '2026-10-21', hourlyRate: null }), /holiday.*unsupported characters/);
 	});
 
@@ -149,12 +150,11 @@ suite('Timesheet PDF', () => {
 		assert.strictEqual(lines.map(item => item.text).join(''), task);
 	});
 
-	test('rejects invalid input and an unrepresentable estimate instead of producing a misleading PDF', async () => {
+	test('rejects invalid input instead of producing a misleading PDF', async () => {
 		await assert.rejects(renderReportPdf({ entries: {}, periodStart: '2026-02-30', hourlyRate: null }), /invalid period/);
 		await assert.rejects(renderReportPdf({ entries: {}, periodStart: '9999-12-31', hourlyRate: null }), /period end/);
 		await assert.rejects(renderReportPdf({ entries: {}, periodStart: '2026-10-21', hourlyRate: -1 }), /hourly rate/);
 		const entries = { '2026-10-21': [{ date: '2026-10-21', task: 'Work', timeIn: '09:00', timeOut: '10:00' }] };
-		await assert.rejects(renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: 1e21 }), /estimated value/);
 		entries['2026-10-21'][0].timeIn = '25:00';
 		await assert.rejects(renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate: null }), /Time In/);
 	});
