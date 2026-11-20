@@ -313,6 +313,26 @@ suite('Report actions', () => {
         const current = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
         assert.strictEqual(current.entries[entry.date][0].task, 'Changed elsewhere');
     });
+    test('deduplicates repeated createEntry requests with the same request ID', async () => {
+        const result = await openTracker(undefined);
+        const entry = { date: '2026-11-01', task: 'Original', timeIn: '09:00', timeOut: '10:00' };
+        await result.receiveMessage({ type: 'createEntry', entry, requestId: 'repeat-create' });
+        await result.receiveMessage({ type: 'createEntry', entry, requestId: 'repeat-create' });
+        const saved = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
+        assert.strictEqual(saved.entries[entry.date].length, 1);
+        const created = result.messages.filter(message => message.type === 'entryCreated');
+        assert.strictEqual(created.length, 2);
+        assert.strictEqual(created[0].entry?.id, created[1].entry?.id);
+        await result.receiveMessage({
+            type: 'createEntry',
+            entry: { ...entry, task: 'Changed' },
+            requestId: 'repeat-create',
+        });
+        const unchanged = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
+        assert.strictEqual(unchanged.entries[entry.date].length, 1);
+        assert.strictEqual(unchanged.entries[entry.date][0].task, 'Original');
+        assert.match(result.messages.at(-1)?.message ?? '', /create-entry request is invalid/i);
+    });
     test('restores saved entries and report settings after extension restart', async () => {
         const first = await openTracker(undefined);
         const entry = { date: '2026-11-01', task: 'Work', timeIn: '09:00', timeOut: '' };
