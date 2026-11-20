@@ -2,7 +2,7 @@
   "name": "time-tracker",
   "displayName": "Time Tracker",
   "description": "Record work time and export local timesheet reports.",
-  "version": "0.1.4",
+  "version": "0.1.3",
   "engines": {
     "vscode": "^1.140.0"
   },
@@ -43,6 +43,14 @@
       {
         "command": "time-tracker.resetFileTimes",
         "title": "Time Tracker: Reset File Activity"
+      },
+      {
+        "command": "time-tracker.exportTimesheet",
+        "title": "Time Tracker: Export Timesheet Data"
+      },
+      {
+        "command": "time-tracker.importTimesheet",
+        "title": "Time Tracker: Import Timesheet Data"
       }
     ]
   },

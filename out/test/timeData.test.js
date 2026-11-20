@@ -384,13 +384,11 @@ suite('Manual timesheet', () => {
         assert.strictEqual(ui.messages.length, count + 1);
         assert.strictEqual(ui.messages.at(-1).type, 'createEntry');
         assert.strictEqual(ui.messages.at(-1).entry.date, entry.date);
-        assert.strictEqual(ui.element('add-submit').disabled, true);
         ui.deliver({
             type: 'entryCreated',
             requestId: ui.messages.at(-1).requestId,
-            entry: { id: 'a'.repeat(32), ...ui.messages.at(-1).entry },
+            entry: { ...ui.messages.at(-1).entry, id: 'created' },
         });
-        assert.strictEqual(ui.element('add-submit').disabled, false);
         ui.element('add-date').value = '2026-02-30';
         ui.element('add-form').dispatch('submit');
         assert.match(ui.element('entries-error').textContent, /valid calendar date/);

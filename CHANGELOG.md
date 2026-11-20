@@ -6,6 +6,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+- Add versioned JSON export and merge-only import for manual entries and public holidays.
+- Validate imported timesheets before mutation, reject conflicting entry identifiers, and keep local preferences.
+- Keep automatic file activity, exclusions, file paths, and reports outside portable timesheet files.
 - Add a reusable floating timer panel with live second-level totals and show/hide controls.
 - Pause and resume the existing automatic tracker without losing partial elapsed time or counting
   paused intervals; keep manual pause across file and focus changes.

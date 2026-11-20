@@ -123,10 +123,15 @@ suite('Report actions', () => {
                 onDidChangeWindowState: (callback) => { focusChanged = callback; return { dispose: () => { } }; },
                 showQuickPick: async (items) => options.chooseExclusion
                     ? items[0] : action ? { value: action } : undefined,
-                showWarningMessage: async () => options.confirmReset ? 'Reset' : undefined,
+                showWarningMessage: async (message) => /Import .* new entries/.test(message)
+                    ? options.confirmImport ? 'Import' : undefined
+                    : options.confirmReset ? 'Reset' : undefined,
+                showOpenDialog: async () => options.importPath ? [{ fsPath: options.importPath }] : undefined,
                 showSaveDialog: async () => {
                     saveDialogs++;
-                    return options.cancelSave ? undefined : { fsPath: path.join(directory, options.failSave ? 'missing\\saved-report.pdf' : 'saved-report.pdf') };
+                    return options.cancelSave ? undefined : {
+                        fsPath: options.savePath ?? path.join(directory, options.failSave ? 'missing\\saved-report.pdf' : 'saved-report.pdf'),
+                    };
                 },
                 showErrorMessage: async (message) => { errors.push(message); },
                 showInformationMessage: async (message) => { information.push(message); },
@@ -170,17 +175,20 @@ suite('Report actions', () => {
             clearInterval: (id) => intervals.delete(id),
         }, { filename });
         module.exports.activate(context);
-        const openCommand = commands.get(options.timer ? 'time-tracker.showFloatingTimer'
-            : options.card ? 'time-tracker.openTimeCard' : 'time-tracker.openTimesheet');
-        assert.ok(openCommand);
-        await openCommand();
-        if (!options.expectLoadFailure) {
-            assert.ok(receiveMessage);
-            await receiveMessage({ type: 'requestReportAction' });
+        if (!options.skipOpen) {
+            const openCommand = commands.get(options.timer ? 'time-tracker.showFloatingTimer'
+                : options.card ? 'time-tracker.openTimeCard' : 'time-tracker.openTimesheet');
+            assert.ok(openCommand);
+            await openCommand();
+            if (!options.expectLoadFailure) {
+                assert.ok(receiveMessage);
+                await receiveMessage({ type: 'requestReportAction' });
+            }
         }
         const receiver = receiveMessage ?? (async () => { throw new Error('No webview receiver registered'); });
         return { opened, errors, information, messages, saveDialogs, receiveMessage: receiver, statusBarItems,
             getHtml: () => html, getReceiver: () => receiveMessage,
+            getSaveDialogs: () => saveDialogs,
             commands, intervals, api, context, activityWrites, deactivate: module.exports.deactivate,
             getPanelCount: () => panelsCreated, getReveals: () => reveals, getWrites: () => writes,
             failPersistence: () => { failPersistence = true; },
@@ -540,6 +548,132 @@ suite('Report actions', () => {
         await result.receiveMessage({ type: 'export', format: 'html' });
         assert.match(result.errors[0], /Could not generate or export the time card/);
         assert.deepStrictEqual(result.information, []);
+    });
+    test('exports portable manual timesheet data from the command palette', async () => {
+        const output = path.join(directory, 'timesheet-transfer.json');
+        const result = await openTracker(undefined, undefined, { savePath: output });
+        const activityWrites = result.activityWrites.length;
+        const entry = { date: '2026-11-01', task: 'Portable work', timeIn: '09:00', timeOut: '10:00' };
+        await result.receiveMessage({ type: 'createEntry', entry, requestId: 'portable-entry' });
+        await result.receiveMessage({ type: 'addHoliday', holiday: { date: entry.date, name: 'Portable holiday' } });
+        await result.commands.get('time-tracker.exportTimesheet')();
+        const transfer = JSON.parse(await (0, promises_1.readFile)(output, 'utf8'));
+        assert.strictEqual(transfer.kind, 'time-tracker-timesheet');
+        assert.strictEqual(transfer.schemaVersion, 1);
+        assert.strictEqual(transfer.entries[entry.date][0].task, entry.task);
+        assert.deepStrictEqual(transfer.holidays, [{ date: entry.date, name: 'Portable holiday' }]);
+        assert.ok(!Object.hasOwn(transfer, 'periodStart'));
+        assert.ok(!Object.hasOwn(transfer, 'hourlyRate'));
+        assert.ok(!Object.hasOwn(transfer, 'fileTimes'));
+        assert.ok(!Object.hasOwn(transfer, 'excludedFiles'));
+        assert.ok(result.information.some(message => /Timesheet data saved/.test(message)));
+        assert.strictEqual(result.activityWrites.length, activityWrites);
+    });
+    test('cancels timesheet export without writing or claiming success', async () => {
+        const result = await openTracker(undefined, undefined, { cancelSave: true, skipOpen: true });
+        await result.commands.get('time-tracker.exportTimesheet')();
+        assert.deepStrictEqual(result.errors, []);
+        assert.deepStrictEqual(result.information, []);
+        assert.strictEqual(result.getSaveDialogs(), 1);
+        assert.deepStrictEqual(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'), JSON.stringify({ entries: {}, periodStart: '2026-10-21', hourlyRate: null, holidays: [] }, null, 2));
+    });
+    test('reports export write failures without claiming success', async () => {
+        const output = path.join(directory, 'missing', 'timesheet-transfer.json');
+        const result = await openTracker(undefined, undefined, { skipOpen: true, savePath: output });
+        await result.commands.get('time-tracker.exportTimesheet')();
+        assert.ok(result.errors.some(message => /Could not export timesheet data/.test(message)));
+        assert.deepStrictEqual(result.information, []);
+        await assert.rejects((0, promises_1.readFile)(output), { code: 'ENOENT' });
+    });
+    test('refuses to export over the active timesheet store', async () => {
+        const result = await openTracker(undefined, undefined, {
+            skipOpen: true,
+            savePath: path.join(directory, 'timesheet.json'),
+        });
+        await result.commands.get('time-tracker.exportTimesheet')();
+        assert.ok(result.errors.some(message => /active timesheet store/.test(message)));
+        const contents = await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8');
+        assert.deepStrictEqual(JSON.parse(contents), {
+            entries: {}, periodStart: '2026-10-21', hourlyRate: null, holidays: [],
+        });
+    });
+    test('imports transfer data atomically, preserves preferences, and is idempotent', async () => {
+        const existingId = 'a'.repeat(32);
+        const importedId = 'b'.repeat(32);
+        const local = {
+            entries: {
+                '2026-11-01': [{
+                        id: existingId, date: '2026-11-01', task: 'Local', timeIn: '09:00', timeOut: '10:00',
+                    }],
+            },
+            periodStart: '2026-12-21',
+            hourlyRate: 25,
+            holidays: [{ date: '2026-11-01', name: 'Local holiday' }],
+        };
+        const input = {
+            kind: 'time-tracker-timesheet',
+            schemaVersion: 1,
+            exportedAt: '2026-11-20T20:00:00.000Z',
+            entries: {
+                '2026-11-01': [local.entries['2026-11-01'][0]],
+                '2026-11-02': [{
+                        id: importedId, date: '2026-11-02', task: 'Imported', timeIn: '10:00', timeOut: '11:00',
+                    }],
+            },
+            holidays: [...local.holidays, { date: '2026-11-02', name: 'Imported holiday' }],
+        };
+        await (0, promises_1.writeFile)(path.join(directory, 'timesheet.json'), JSON.stringify(local, null, 2));
+        const importPath = path.join(directory, 'import.json');
+        await (0, promises_1.writeFile)(importPath, JSON.stringify(input));
+        const result = await openTracker(undefined, undefined, { skipOpen: true, importPath, confirmImport: true });
+        const activityWrites = result.activityWrites.length;
+        await result.commands.get('time-tracker.importTimesheet')();
+        const imported = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
+        assert.strictEqual(imported.periodStart, local.periodStart);
+        assert.strictEqual(imported.hourlyRate, local.hourlyRate);
+        assert.deepStrictEqual(imported.entries['2026-11-02'][0].id, importedId);
+        assert.deepStrictEqual(imported.holidays, input.holidays);
+        assert.strictEqual(result.activityWrites.length, activityWrites);
+        const once = await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8');
+        await result.commands.get('time-tracker.importTimesheet')();
+        assert.strictEqual(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'), once);
+        assert.ok(result.information.some(message => /1 entries and 1 holidays added/.test(message)));
+        assert.ok(result.information.some(message => /0 entries and 0 holidays added/.test(message)));
+    });
+    test('cancels import and rejects conflicting IDs without changing durable data', async () => {
+        const existingId = 'a'.repeat(32);
+        const local = {
+            entries: {
+                '2026-11-01': [{
+                        id: existingId, date: '2026-11-01', task: 'Local', timeIn: '09:00', timeOut: '10:00',
+                    }],
+            },
+            periodStart: '2026-10-21',
+            hourlyRate: null,
+            holidays: [],
+        };
+        const statePath = path.join(directory, 'timesheet.json');
+        await (0, promises_1.writeFile)(statePath, JSON.stringify(local, null, 2));
+        const importPath = path.join(directory, 'import.json');
+        const conflict = {
+            kind: 'time-tracker-timesheet',
+            schemaVersion: 1,
+            exportedAt: '2026-11-20T20:00:00.000Z',
+            entries: {
+                '2026-11-01': [{ ...local.entries['2026-11-01'][0], task: 'Conflict' }],
+            },
+            holidays: [],
+        };
+        await (0, promises_1.writeFile)(importPath, JSON.stringify(conflict));
+        const cancelled = await openTracker(undefined, undefined, { skipOpen: true, importPath, confirmImport: false });
+        await cancelled.commands.get('time-tracker.importTimesheet')();
+        assert.strictEqual(await (0, promises_1.readFile)(statePath, 'utf8'), JSON.stringify(local, null, 2));
+        await cancelled.deactivate();
+        const rejected = await openTracker(undefined, undefined, { skipOpen: true, importPath, confirmImport: true });
+        await rejected.commands.get('time-tracker.importTimesheet')();
+        assert.strictEqual(await (0, promises_1.readFile)(statePath, 'utf8'), JSON.stringify(local, null, 2));
+        assert.ok(rejected.errors.some(message => /conflicts with a local entry/.test(message)));
+        await rejected.deactivate();
     });
 });
 //# sourceMappingURL=reportActions.test.js.map

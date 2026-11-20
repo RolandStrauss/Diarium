@@ -22,12 +22,29 @@ const FILE_TIMES_STORAGE_KEY = 'time-tracker.file-times';
 const FILE_ACTIVITY_STORAGE_KEY = 'time-tracker.file-activity';
 const EXCLUDED_FILES_STORAGE_KEY = 'excludedFiles';
 const DEFAULT_PERIOD_START = '2026-10-21';
+const TIMESHEET_TRANSFER_KIND = 'time-tracker-timesheet';
+const TIMESHEET_TRANSFER_VERSION = 1;
+const MAX_TIMESHEET_IMPORT_BYTES = 5 * 1024 * 1024;
 
-interface TrackerState {
+export interface TrackerState {
 	entries: TimeEntriesByDate;
 	periodStart: string;
 	hourlyRate: number | null;
 	holidays: PublicHoliday[];
+}
+
+export interface TimesheetTransfer {
+	kind: typeof TIMESHEET_TRANSFER_KIND;
+	schemaVersion: typeof TIMESHEET_TRANSFER_VERSION;
+	exportedAt: string;
+	entries: TimeEntriesByDate;
+	holidays: PublicHoliday[];
+}
+
+export interface TimesheetMergeResult {
+	state: TrackerState;
+	addedEntries: number;
+	addedHolidays: number;
 }
 
 let fileTimeTracker: FileTimeTracker | undefined;
@@ -100,6 +117,118 @@ function parseState(stored: Partial<TrackerState> = {}): TrackerState {
 	return { entries, periodStart, hourlyRate, holidays };
 }
 
+function copyTransferEntries(entries: TimeEntriesByDate): TimeEntriesByDate {
+	return Object.fromEntries(Object.entries(entries).map(([date, rows]) => [
+		date,
+		rows.map(row => ({
+			id: row.id,
+			date: row.date,
+			task: row.task,
+			timeIn: row.timeIn,
+			timeOut: row.timeOut,
+		})),
+	]));
+}
+
+function copyTransferHolidays(holidays: PublicHoliday[]): PublicHoliday[] {
+	return holidays.map(holiday => ({ date: holiday.date, name: holiday.name }));
+}
+
+function sameEntry(left: StoredTimeEntry, right: StoredTimeEntry): boolean {
+	return left.id === right.id && left.date === right.date && left.task === right.task &&
+		left.timeIn === right.timeIn && left.timeOut === right.timeOut;
+}
+
+export function createTimesheetTransfer(state: TrackerState, now = new Date()): TimesheetTransfer {
+	return {
+		kind: TIMESHEET_TRANSFER_KIND,
+		schemaVersion: TIMESHEET_TRANSFER_VERSION,
+		exportedAt: now.toISOString(),
+		entries: copyTransferEntries(state.entries),
+		holidays: copyTransferHolidays(state.holidays),
+	};
+}
+
+export function parseTimesheetTransfer(contents: string): Pick<TimesheetTransfer, 'entries' | 'holidays'> {
+	if (Buffer.byteLength(contents, 'utf8') > MAX_TIMESHEET_IMPORT_BYTES) {
+		throw new Error(`The timesheet file is too large. The limit is ${MAX_TIMESHEET_IMPORT_BYTES} bytes.`);
+	}
+	let value: unknown;
+	try {
+		value = JSON.parse(contents);
+	} catch {
+		throw new Error('The selected timesheet file is not valid JSON.');
+	}
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error('The selected file is not a Time Tracker timesheet export.');
+	}
+	const candidate = value as Partial<TimesheetTransfer>;
+	const allowedFields = new Set(['kind', 'schemaVersion', 'exportedAt', 'entries', 'holidays']);
+	if (Object.keys(candidate).some(field => !allowedFields.has(field))) {
+		throw new Error('The selected timesheet export contains unsupported fields.');
+	}
+	if (candidate.kind !== TIMESHEET_TRANSFER_KIND || candidate.schemaVersion !== TIMESHEET_TRANSFER_VERSION) {
+		throw new Error('The selected file uses an unsupported Time Tracker timesheet format.');
+	}
+	const exportedAt = typeof candidate.exportedAt === 'string' ? new Date(candidate.exportedAt) : undefined;
+	if (!exportedAt || !Number.isFinite(exportedAt.getTime()) || exportedAt.toISOString() !== candidate.exportedAt) {
+		throw new Error('The selected timesheet export has an invalid export timestamp.');
+	}
+	if (!candidate.entries || typeof candidate.entries !== 'object' || Array.isArray(candidate.entries) ||
+		Object.values(candidate.entries).some(rows => !Array.isArray(rows))) {
+		throw new Error('The selected timesheet export has invalid entries.');
+	}
+	if (!Array.isArray(candidate.holidays)) {
+		throw new Error('The selected timesheet export has invalid holidays.');
+	}
+	const parsed = parseState({ entries: candidate.entries, holidays: candidate.holidays });
+	return {
+		entries: copyTransferEntries(parsed.entries),
+		holidays: copyTransferHolidays(parsed.holidays),
+	};
+}
+
+export function mergeTimesheetTransfer(
+	state: TrackerState,
+	imported: Pick<TimesheetTransfer, 'entries' | 'holidays'>,
+): TimesheetMergeResult {
+	const localById = new Map<string, StoredTimeEntry>(
+		Object.values(state.entries).flat().map(entry => [entry.id, entry]),
+	);
+	const entries = copyTransferEntries(state.entries);
+	let addedEntries = 0;
+	for (const [date, rows] of Object.entries(imported.entries)) {
+		for (const entry of rows) {
+			const local = localById.get(entry.id);
+			if (local) {
+				if (!sameEntry(local, entry)) {
+					throw new Error(`Imported entry ${entry.id} conflicts with a local entry. Import was not applied.`);
+				}
+				continue;
+			}
+			entries[date] = [...(entries[date] ?? []), { ...entry }];
+			localById.set(entry.id, entry);
+			addedEntries++;
+		}
+	}
+	const holidayKeys = new Set(state.holidays.map(holiday => JSON.stringify([holiday.date, holiday.name])));
+	const holidays = copyTransferHolidays(state.holidays);
+	let addedHolidays = 0;
+	for (const holiday of imported.holidays) {
+		const key = JSON.stringify([holiday.date, holiday.name]);
+		if (!holidayKeys.has(key)) {
+			holidayKeys.add(key);
+			holidays.push({ ...holiday });
+			addedHolidays++;
+		}
+	}
+	return {
+		state: addedEntries || addedHolidays ? { ...state, entries, holidays } : state,
+		addedEntries,
+		addedHolidays,
+	};
+}
+
 function stateFile(context: vscode.ExtensionContext): string {
 	return path.join(context.globalStorageUri.fsPath, STORAGE_FILE);
 }
@@ -141,11 +270,18 @@ async function readState(context: vscode.ExtensionContext): Promise<TrackerState
 	return migratedState;
 }
 
-async function saveDocument(filename: string, format: 'html' | 'pdf', render: () => Promise<Buffer> | Buffer): Promise<string | undefined> {
+async function saveDocument(
+	filename: string,
+	format: 'html' | 'pdf' | 'json',
+	render: () => Promise<Buffer> | Buffer,
+	protectedPath?: string,
+): Promise<string | undefined> {
 	const baseDirectory = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(homedir());
 	const destination = await vscode.window.showSaveDialog({
 		defaultUri: vscode.Uri.joinPath(baseDirectory, filename),
-		filters: { [format === 'html' ? 'HTML documents' : 'PDF documents']: [format] },
+		filters: {
+			[format === 'html' ? 'HTML documents' : format === 'json' ? 'JSON documents' : 'PDF documents']: [format],
+		},
 		saveLabel: `Save ${format.toUpperCase()}`,
 	});
 	if (!destination) {
@@ -153,6 +289,16 @@ async function saveDocument(filename: string, format: 'html' | 'pdf', render: ()
 	}
 	const filePath = path.extname(destination.fsPath).toLowerCase() === `.${format}`
 		? destination.fsPath : `${destination.fsPath}.${format}`;
+	if (protectedPath) {
+		const selected = path.resolve(filePath);
+		const protectedFile = path.resolve(protectedPath);
+		const matches = process.platform === 'win32'
+			? selected.toLowerCase() === protectedFile.toLowerCase()
+			: selected === protectedFile;
+		if (matches) {
+			throw new Error('Choose a different file; the active timesheet store cannot be overwritten by an export.');
+		}
+	}
 	await writeFile(filePath, await render());
 	return filePath;
 }
@@ -201,6 +347,8 @@ export function activate(context: vscode.ExtensionContext): void {
 			'time-tracker.toggleTracking',
 			'time-tracker.manageExclusions',
 			'time-tracker.resetFileTimes',
+			'time-tracker.exportTimesheet',
+			'time-tracker.importTimesheet',
 		].map(command => vscode.commands.registerCommand(command, unavailable)));
 		unavailable();
 	};
@@ -291,7 +439,11 @@ export function activate(context: vscode.ExtensionContext): void {
 			return Promise.reject(new Error('Time Tracker is shutting down; reopen it before editing.'));
 		}
 		const write = timesheetWrites.then(async () => {
-			const next = change(await getState());
+			const current = await getState();
+			const next = change(current);
+			if (next === current) {
+				return;
+			}
 			await writeState(context, next);
 			timesheetState = next;
 			for (const panel of fileTimePanels) {
@@ -302,6 +454,76 @@ export function activate(context: vscode.ExtensionContext): void {
 		pendingTimesheetWrites = timesheetWrites;
 		return write;
 	};
+	const exportTimesheet = vscode.commands.registerCommand('time-tracker.exportTimesheet', async () => {
+		try {
+			await timesheetWrites;
+			const state = await getState();
+			const transfer = createTimesheetTransfer(state);
+			const filePath = await saveDocument(
+				`time-tracker-timesheet-${transfer.exportedAt.slice(0, 10)}.json`,
+				'json',
+				() => Buffer.from(`${JSON.stringify(transfer, null, 2)}\n`, 'utf8'),
+				stateFile(context),
+			);
+			if (filePath) {
+				void vscode.window.showInformationMessage(`Timesheet data saved to ${filePath}`);
+			}
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			void vscode.window.showErrorMessage(`Could not export timesheet data: ${reason}`);
+		}
+	});
+	const importTimesheet = vscode.commands.registerCommand('time-tracker.importTimesheet', async () => {
+		try {
+			const selection = await vscode.window.showOpenDialog({
+				canSelectFiles: true,
+				canSelectFolders: false,
+				canSelectMany: false,
+				filters: { 'Time Tracker timesheet': ['json'], 'All files': ['*'] },
+				openLabel: 'Import timesheet data',
+			});
+			if (!selection?.length) {
+				return;
+			}
+			const handle = await open(selection[0].fsPath, 'r');
+			let contents: string;
+			try {
+				const info = await handle.stat();
+				if (!info.isFile()) {
+					throw new Error('Select a regular JSON file.');
+				}
+				if (info.size > MAX_TIMESHEET_IMPORT_BYTES) {
+					throw new Error(`The timesheet file is too large. The limit is ${MAX_TIMESHEET_IMPORT_BYTES} bytes.`);
+				}
+				contents = await handle.readFile({ encoding: 'utf8' });
+			} finally {
+				await handle.close();
+			}
+			const imported = parseTimesheetTransfer(contents);
+			await timesheetWrites;
+			const preview = mergeTimesheetTransfer(await getState(), imported);
+			const answer = await vscode.window.showWarningMessage(
+				`Import ${preview.addedEntries} new entries and ${preview.addedHolidays} new holidays? ` +
+				'Existing timesheet entries and preferences will be kept.',
+				{ modal: true },
+				'Import',
+			);
+			if (answer !== 'Import') {
+				return;
+			}
+			let applied: TimesheetMergeResult | undefined;
+			await changeState(state => {
+				applied = mergeTimesheetTransfer(state, imported);
+				return applied.state;
+			});
+			void vscode.window.showInformationMessage(
+				`Timesheet import complete: ${applied!.addedEntries} entries and ${applied!.addedHolidays} holidays added.`,
+			);
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error);
+			void vscode.window.showErrorMessage(`Could not import timesheet data: ${reason}`);
+		}
+	});
 	const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 	statusBarItem.command = 'time-tracker.openTimesheet';
 	statusBarItem.text = '$(watch) 0h 00m | 0h 00m';
@@ -740,6 +962,8 @@ export function activate(context: vscode.ExtensionContext): void {
 		toggleTracking,
 		manageExclusions,
 		resetFileTimes,
+		exportTimesheet,
+		importTimesheet,
 		floatingTimer,
 		statusBarItem,
 		activeEditorListener,

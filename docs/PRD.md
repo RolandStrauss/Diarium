@@ -1,3 +1,5 @@
+# Time Tracker Product Requirements Document
+
 ## 1. Purpose and Evidence Boundary
 
 This product requirements document (PRD) defines the current product and the requirements for a trustworthy
@@ -42,17 +44,22 @@ The product must:
 **Non-goals:** payroll, tax, invoicing, attendance or productivity scoring, screenshots, automatic idle detection,
 other-application monitoring, accounts, cloud synchronization, team approval, calendar integration, and a
 native always-on-top overlay. File-activity history is cumulative; daily, weekly, and monthly file-activity
-analytics are not in scope. User-facing import, synchronization, templates, and additional export formats are
-not required.
+analytics are not in scope. Synchronization, templates, and additional export formats are not included.
+
+User-triggered, versioned JSON export and merge-only import are supported for manual timesheet entries and
+public holidays. They do not transfer automatic file activity, file paths, exclusions, reporting preferences,
+or existing reports.
 
 ## 4. Current Product Baseline
 
 These observations describe the active working-tree code, not verified release behavior. [E3-E8]
 
-- **Discovery:** Startup activation and seven `time-tracker.*` commands are declared in the manifest.
+- **Discovery:** Startup activation and nine `time-tracker.*` commands are declared in the manifest.
 - **Timesheet:** A webview provides entries, date and task filters, calendar-year grid, summaries, and a report.
 - **Manual storage:** A JSON file in extension global storage holds entries and preferences. Older
   `time-tracker.data` state is read when the file is absent.
+- **Portable timesheets:** Versioned JSON export includes manual entries and public holidays. Import validates
+  the complete file, requires confirmation, and merges only non-conflicting records through the manual store.
 - **Reporting:** Print opens a locally generated landscape A4 PDF in an external viewer; another action saves PDF.
 - **File tracking:** Focused local files accrue elapsed time, including idle time. Pause, switches, focus,
   checkpoints, and shutdown settle intervals.
@@ -69,13 +76,14 @@ not directory paths. PDF card export currently rejects names outside printable A
 
 The unreferenced `ExcludeFiles`, `TimeTrackerProvider`, and `TimeCardGenerator` modules are not wired into the
 active entry point. Their old command names, Explorer view, and top-five card must not be described as active
-capabilities. The manifest currently declares version `0.1.1`, VS Code `^1.140.0`,
+capabilities. The manifest currently declares version `0.1.3`, VS Code `^1.140.0`,
 and the `pdfkit` runtime dependency. [E3, E4, E9]
 
 Current command identifiers are `time-tracker.openTimesheet`, `time-tracker.openTimeCard`,
 `time-tracker.showFloatingTimer`, `time-tracker.hideFloatingTimer`, and `time-tracker.toggleTracking`.
-The new commands are `time-tracker.manageExclusions` and `time-tracker.resetFileTimes`. Preserve these
-identifiers and the status-bar route to the timesheet.
+The remaining commands are `time-tracker.manageExclusions`, `time-tracker.resetFileTimes`,
+`time-tracker.exportTimesheet`, and `time-tracker.importTimesheet`. Preserve these identifiers and the
+status-bar route to the timesheet.
 
 ## 5. Gaps That Affect Product Trust
 
@@ -101,7 +109,7 @@ Both P0 and P1 are required for this proposed release. Priority determines seque
 | Priority | Scope |
 | --- | --- |
 | P0 | Entry and timer correctness; non-destructive storage, concurrency, privacy, reset, and error handling. |
-| P1 | Filtering, summaries, accessible displays, exclusions, timesheet PDF, and file-activity card exports. |
+| P1 | Filtering, summaries, accessibility, transfer, timesheet PDF, exclusions, and card exports. |
 
 Preserve existing behavior unless a requirement below explicitly changes it. Do not add a service, account,
 new framework, or dependency merely to implement these requirements.
@@ -233,10 +241,27 @@ Requirements apply to the release target. A baseline observation in section 4 do
   unavailable. Show a clear read-only or paused state and allow safe recovery after an owner exits or crashes.
   Never silently merge competing whole-store snapshots.
 
+### FR-09: Portable Manual Timesheet Data
+
+- Provide discoverable export and import commands that work without an open timesheet panel.
+- Export a versioned UTF-8 JSON envelope containing manual entries and public holidays. Preserve entry IDs and
+  values, and include an export timestamp. Do not export reporting period, hourly rate, automatic file activity,
+  file paths, exclusions, source contents, or existing reports.
+- Validate the complete import before mutation. Reject malformed JSON, unsupported versions, invalid timestamps,
+  invalid records, duplicate IDs, and files larger than 5 MiB. Never pass through unsupported top-level fields.
+- Import through the same serialized manual-store writer used by normal edits. Require modal confirmation with
+  added-entry and added-holiday counts. Cancellation writes nothing and reports no success.
+- Keep local entries, reporting period, and hourly rate. Add only records not already present. Treat an identical
+  entry ID and value as already imported, add missing holidays once, and reject the complete import when an entry
+  ID conflicts with a different local value.
+- Confirm export only after the user-selected file is written. On import or export failure, show an actionable
+  error and retain the previous durable data. Warn users that task and holiday descriptions can be sensitive.
+
 ## 8. Non-Functional Requirements
 
-- **Privacy:** Do not transmit file paths, names, timesheet data, rates, or source contents. Do not read file
-  contents to measure time. Explain global storage and exported-name sensitivity in user documentation.
+- **Privacy:** Do not transmit file paths, names, timesheet data, rates, or source contents. Manual timesheet
+  export is local and user-initiated; it contains task and holiday text that users must review before sharing.
+  File tracking must not read file contents. Explain global storage and export sensitivity in user documentation.
 - **Security:** Escape dynamic text and attributes in their rendering contexts. Validate webview messages and
   apply a restrictive Content Security Policy (CSP); exported HTML needs no scripts or remote resources.
 - **Accessibility:** Support keyboard navigation and meaningful labels for all inputs and actions. Associate
@@ -262,6 +287,9 @@ These are acceptance targets, not observed measurements or business metrics.
 - Timesheet PDF contains every required date, entry, and total across landscape A4 pages, or reports a
   representation limitation without claiming success. Card exports match the preview snapshot and include every
   counted file.
+- Timesheet export round-trips every manual entry and holiday without preferences or file-activity data.
+  Repeated import adds nothing, conflicts reject the complete operation, and cancellation or failure preserves
+  local durable data.
 - With 1,000 seeded file records, snapshot and card generation each complete within 200 ms on a documented
   reference machine. Record hardware, operating system, VS Code version, input, and timing method.
 
@@ -284,6 +312,8 @@ points, not evidence that the full release criteria have passed. [E8]
   reset, checkpoint, restart, and persistence-failure sequences.
 - Exercise simultaneous panels and extension hosts, ownership loss and recovery, failed writes and retry,
   malformed storage, and repeatable migration with conflicting legacy data.
+- Test portable timesheet export and import with valid, repeated, conflicting, invalid, oversized, canceled,
+  and failed-write cases. Verify local preferences and automatic file-activity state remain unchanged.
 - Inspect generated PDFs for page count, every date and entry, totals, long tasks, weekends, incomplete entries,
   grayscale readability, and unsupported characters. Test print-viewer and save success, cancellation, and failure.
 - Test cards with empty data, more than five files, repeated and special-character names, long names, Unicode,
@@ -302,6 +332,7 @@ Use the existing TypeScript modules and VS Code APIs; do not introduce a separat
 1. Repair and test manual entry, period, report, and persistence failure paths.
 1. Complete automatic tracking, exact-file exclusions, safe reset, and coherent snapshots.
 1. Align displays and exports with the shared snapshots; retain existing HTML and PDF card capabilities.
+1. Add validated, merge-only portable manual-timesheet exchange without adding synchronization or file tracking.
 1. Verify accessibility, extension-host behavior, supported platforms, packaging, and release metadata;
    update user documentation to describe actual behavior.
 
@@ -321,6 +352,8 @@ not claims that the current implementation already meets them. A product owner m
 1. **Floating Hide:** Close the panel and keep tracking. The existing Show command restores it.
 1. **Calendar and currency:** Show 366 rows in leap years; use a numeric, currency-neutral hourly estimate.
    Keep the specified 21 October 2026 seed and the clamped-month end rule in FR-02.
+1. **Portable data:** Keep timesheet transfer local, explicit, versioned, and merge-only. A portable file does
+   not include automatic file activity or local preferences.
 1. **Distribution:** Do not change publisher, repository, support links, or release version by assumption.
    Block publication until ownership and metadata are verified; package creation does not approve publication.
 1. **Release targets:** Use the checks in section 9 and record their test environment. Product ownership must
@@ -336,7 +369,7 @@ Links identify the inspected working-tree sources; the timer draft is historical
   [test configuration](../.vscode-test.mjs), and [Playwright workflow](../.github/workflows/playwright.yml):
   commands, dependencies, supported version, and validation setup.
 - **E4:** [Activation and persistence](../src/extension.ts) and [file tracker](../src/fileTimeTracker.ts):
-  storage, tracking transitions, commands, and report actions.
+  storage, transfer, tracking transitions, commands, and report actions.
 - **E5:** [Timesheet data](../src/timeData.ts), [timesheet webview](../src/webview.ts), and
   [timesheet PDF](../src/pdfReport.ts): validation, periods, presentation, and report generation.
 - **E6:** [Floating timer](../src/floatingTimer.ts) and [time card](../src/timeCard.ts):
@@ -355,8 +388,10 @@ The proposed release is complete only when:
 - All P0 and P1 requirements pass, including failure, recovery, concurrency, and accessibility paths.
 - Timing, storage, migration, reset, manual reports, and card exports have recorded automated and
   extension-host evidence against sections 9 and 10.
+- Portable timesheet export/import passes round-trip, idempotence, conflict, cancellation, failure, and
+  file-activity separation checks.
 - Existing command identifiers and valid records remain compatible; unresolved legacy data is preserved.
-- Documentation matches verified storage, focus, pause, exclusion, reset, print, and export behavior.
+- Documentation matches verified storage, transfer, focus, pause, exclusion, reset, print, and export behavior.
 - Supported-platform and packaged-extension smoke checks pass, and release ownership is confirmed.
 
 This document alone does not implement requirements or establish security, runtime, performance, or release

@@ -40,6 +40,20 @@ and ensure their extension hosts have stopped. Then remove only the lock file
 named in the error message and reopen VS Code. Do not remove the timesheet or
 other storage files.
 
+## Move timesheet data
+
+Use **Time Tracker: Export Timesheet Data** and **Time Tracker: Import Timesheet Data**
+to transfer manual entries and public holidays between VS Code profiles or machines.
+
+- Exports use a versioned UTF-8 JSON file.
+- The file contains manual entries and holidays, including task and holiday text.
+  Review it before sharing because those descriptions can be sensitive.
+- Imports merge into the local timesheet. Repeating the same import adds nothing.
+- Existing local entries, reporting period, and hourly rate stay unchanged.
+- A conflicting entry identifier rejects the complete import without replacing local data.
+- Automatic file paths, durations, exclusions, reports, and source contents are not exported or imported.
+- Files larger than 5 MiB and unsupported schema versions are rejected.
+
 ## Time cards
 
 Run **Time Tracker: Preview Time Card** from the Command Palette, or choose
