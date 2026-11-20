@@ -266,6 +266,10 @@ export function activate(context: vscode.ExtensionContext): void {
 	let timesheetState: TrackerState | undefined;
 	let pendingState: Promise<TrackerState> | undefined;
 	let timesheetWrites = Promise.resolve();
+	const createdEntriesByRequest = new Map<string, {
+		entry: StoredTimeEntry;
+		operation: Promise<void>;
+	}>();
 	const getState = async (): Promise<TrackerState> => {
 		if (timesheetState) {
 			return timesheetState;
@@ -570,14 +574,34 @@ export function activate(context: vscode.ExtensionContext): void {
 						if (typeof message.requestId !== 'string' || !message.requestId || message.requestId.length > 128) {
 							throw new Error('The new entry request is invalid. Try again.');
 						}
-						const created: StoredTimeEntry = {
+						const candidate: StoredTimeEntry = {
 							...entry, id: newEntryId(), task: entry.task.trim(),
 						};
-						await changeState(state => ({
+						const existing = createdEntriesByRequest.get(message.requestId);
+						if (existing) {
+							const matches = existing.entry.date === candidate.date &&
+								existing.entry.task === candidate.task &&
+								existing.entry.timeIn === candidate.timeIn &&
+								existing.entry.timeOut === candidate.timeOut;
+							if (!matches) {
+								throw new Error('The create-entry request is invalid.');
+							}
+							await existing.operation;
+							await panel.webview.postMessage({ type: 'entryCreated', requestId: message.requestId, entry: existing.entry });
+							break;
+						}
+						const operation = changeState(state => ({
 							...state,
-							entries: { ...state.entries, [entry.date]: [...(state.entries[entry.date] ?? []), created] },
+							entries: { ...state.entries, [entry.date]: [...(state.entries[entry.date] ?? []), candidate] },
 						}));
-						await panel.webview.postMessage({ type: 'entryCreated', requestId: message.requestId, entry: created });
+						createdEntriesByRequest.set(message.requestId, { entry: candidate, operation });
+						try {
+							await operation;
+							await panel.webview.postMessage({ type: 'entryCreated', requestId: message.requestId, entry: candidate });
+						} catch (error) {
+							createdEntriesByRequest.delete(message.requestId);
+							throw error;
+						}
 						break;
 					}
 					if (!isEntryId(message.id)) {

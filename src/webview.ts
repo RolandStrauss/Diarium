@@ -115,7 +115,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <label class="task">Task<input id="add-task" type="text" maxlength="240" required aria-label="Task description" aria-describedby="entries-error"></label>
 <label>Time In<input id="add-in" type="time" step="60" aria-label="Time In" aria-describedby="entries-error"></label>
 <label>Time Out<input id="add-out" type="time" step="60" aria-label="Time Out" aria-describedby="entries-error"></label>
-<button class="primary" type="submit">Add entry</button>
+<button id="add-submit" class="primary" type="submit">Add entry</button>
 </form>
 <div class="filters">
 <label>Filter by date<input id="filter-date" type="date" aria-label="Filter by date" aria-describedby="entries-error"></label>
@@ -447,11 +447,14 @@ byId('clear-filters').addEventListener('click', () => { byId('filter-date').valu
 byId('add-date').value = localDateValue();
 byId('add-form').addEventListener('submit', (event) => {
  event.preventDefault();
+ const submit = byId('add-submit');
+ if (submit.disabled) return;
  const fields = { date: byId('add-date'), task: byId('add-task'), timeIn: byId('add-in'), timeOut: byId('add-out') };
  const entry = { date: fields.date.value, task: fields.task.value.trim(), timeIn: fields.timeIn.value, timeOut: fields.timeOut.value };
  if (!validateRow(entry, fields, 'entries-error', false)) return;
  const requestId = 'form-' + (++nextRequestId);
  pendingFormEntries[requestId] = entry;
+ submit.disabled = true;
  vscode.postMessage({ type: 'createEntry', entry, requestId });
 });
 byId('period-start').addEventListener('input', () => {
@@ -506,6 +509,7 @@ window.addEventListener('message', (event) => {
   const formEntry = pendingFormEntries[message.requestId];
   if (formEntry) {
    delete pendingFormEntries[message.requestId];
+   byId('add-submit').disabled = false;
    if (byId('add-date').value === formEntry.date && byId('add-task').value.trim() === formEntry.task &&
     byId('add-in').value === formEntry.timeIn && byId('add-out').value === formEntry.timeOut) {
     byId('add-task').value = ''; byId('add-in').value = ''; byId('add-out').value = '';
@@ -537,7 +541,10 @@ window.addEventListener('message', (event) => {
  }
  if (message.type === 'fileTimes') { data.fileTimes = message.data.fileTimes; data.activeFile = message.data.activeFile; data.paused = message.data.paused; data.excluded = message.data.excluded; data.activeEligible = message.data.activeEligible; renderFileTimes(); }
  if (message.type === 'error') {
-  if (message.requestId) delete pendingFormEntries[message.requestId];
+  if (message.requestId) {
+   delete pendingFormEntries[message.requestId];
+   byId('add-submit').disabled = false;
+  }
   if (message.operation === 'saveEntry' || message.operation === 'deleteEntry' || message.operation === 'createEntry') {
    const draft = Object.values(drafts).find((item) => message.operation === 'createEntry'
     ? item.requestId === message.requestId : item.id === message.id);
