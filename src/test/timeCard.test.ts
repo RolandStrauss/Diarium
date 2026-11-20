@@ -1,5 +1,6 @@
 import * as assert from 'node:assert';
 import { inflateSync } from 'node:zlib';
+import { getFloatingTimerHtml } from '../floatingTimer';
 import { createTimeCard, renderTimeCardHtml, renderTimeCardPdf } from '../timeCard';
 
 suite('Time cards', () => {
@@ -44,12 +45,25 @@ suite('Time cards', () => {
 		assert.ok(!html.includes('acquireVsCodeApi'));
 		assert.ok(!html.includes('<script'));
 		assert.match(html, /prefers-reduced-motion: reduce/);
+		assert.match(html, /@media \(forced-colors: active\)/);
 		assert.match(html, /@media print/);
+		assert.match(html, /background: white; color: #111/);
 		assert.match(html, /script-src 'none'/);
 		const preview = renderTimeCardHtml(card, { nonce: 'test-nonce' });
 		assert.match(preview, /script-src 'nonce-test-nonce'/);
 		assert.match(preview, /id="save-html"/);
 		assert.match(preview, /id="save-pdf"/);
+	});
+
+	test('renders timer and card controls for keyboard and high-contrast use', () => {
+		const timer = getFloatingTimerHtml();
+		assert.match(timer, /id="toggle" type="button" aria-pressed="false"/);
+		assert.match(timer, /setAttribute\('aria-pressed', String\(message\.paused\)\)/);
+		assert.match(timer, /button:focus-visible/);
+		assert.match(timer, /@media \(forced-colors: active\)/);
+		const preview = renderTimeCardHtml(createTimeCard({ file: 1 }, now), { nonce: 'test-nonce' });
+		assert.match(preview, /<nav class="actions" aria-label="Time card actions">/);
+		assert.match(preview, /button:focus-visible/);
 	});
 
 	function pdfStreams(pdf: Buffer): string {

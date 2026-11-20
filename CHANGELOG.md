@@ -6,6 +6,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+- Add keyboard tab navigation, invalid-field focus, explicit file-tracking states, and forced-colors fallbacks.
+- Use grayscale-friendly print styling for standalone time-card HTML without hiding durations or percentages.
 - Add versioned JSON export and merge-only import for manual entries and public holidays.
 - Validate imported timesheets before mutation, reject conflicting entry identifiers, and keep local preferences.
 - Keep automatic file activity, exclusions, file paths, and reports outside portable timesheet files.

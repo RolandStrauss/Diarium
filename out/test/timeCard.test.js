@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const assert = __importStar(require("node:assert"));
 const node_zlib_1 = require("node:zlib");
+const floatingTimer_1 = require("../floatingTimer");
 const timeCard_1 = require("../timeCard");
 suite('Time cards', () => {
     const now = new Date('2026-11-13T08:00:00Z');
@@ -74,12 +75,24 @@ suite('Time cards', () => {
         assert.ok(!html.includes('acquireVsCodeApi'));
         assert.ok(!html.includes('<script'));
         assert.match(html, /prefers-reduced-motion: reduce/);
+        assert.match(html, /@media \(forced-colors: active\)/);
         assert.match(html, /@media print/);
+        assert.match(html, /background: white; color: #111/);
         assert.match(html, /script-src 'none'/);
         const preview = (0, timeCard_1.renderTimeCardHtml)(card, { nonce: 'test-nonce' });
         assert.match(preview, /script-src 'nonce-test-nonce'/);
         assert.match(preview, /id="save-html"/);
         assert.match(preview, /id="save-pdf"/);
+    });
+    test('renders timer and card controls for keyboard and high-contrast use', () => {
+        const timer = (0, floatingTimer_1.getFloatingTimerHtml)();
+        assert.match(timer, /id="toggle" type="button" aria-pressed="false"/);
+        assert.match(timer, /setAttribute\('aria-pressed', String\(message\.paused\)\)/);
+        assert.match(timer, /button:focus-visible/);
+        assert.match(timer, /@media \(forced-colors: active\)/);
+        const preview = (0, timeCard_1.renderTimeCardHtml)((0, timeCard_1.createTimeCard)({ file: 1 }, now), { nonce: 'test-nonce' });
+        assert.match(preview, /<nav class="actions" aria-label="Time card actions">/);
+        assert.match(preview, /button:focus-visible/);
     });
     function pdfStreams(pdf) {
         const contents = pdf.toString('latin1');

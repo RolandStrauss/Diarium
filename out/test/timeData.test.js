@@ -75,6 +75,8 @@ suite('Manual timesheet', () => {
         innerHTML = '';
         hidden = false;
         disabled = false;
+        tabIndex = 0;
+        focused = false;
         dataset = {};
         validity = { badInput: false };
         listeners = {};
@@ -89,7 +91,10 @@ suite('Manual timesheet', () => {
         appendChild() { }
         querySelectorAll() { return []; }
         closest() { return null; }
-        dispatch(type) { this.listeners[type]?.({ target: this, preventDefault() { } }); }
+        focus() { this.focused = true; }
+        dispatch(type, event = {}) {
+            this.listeners[type]?.({ target: this, preventDefault() { }, ...event });
+        }
     }
     function frontend() {
         const elements = new Map();
@@ -393,6 +398,26 @@ suite('Manual timesheet', () => {
         ui.element('add-form').dispatch('submit');
         assert.match(ui.element('entries-error').textContent, /valid calendar date/);
     });
+    test('supports tablist keyboard navigation and roving focus', () => {
+        const ui = frontend();
+        const report = ui.element('report-tab');
+        ui.element('entries-tab').dispatch('keydown', { key: 'ArrowRight' });
+        assert.strictEqual(ui.element('report-view').hidden, false);
+        assert.strictEqual(report.getAttribute('aria-selected'), 'true');
+        assert.strictEqual(report.tabIndex, 0);
+        assert.strictEqual(report.focused, true);
+        assert.strictEqual(ui.element('entries-tab').tabIndex, -1);
+        report.dispatch('keydown', { key: 'End' });
+        assert.strictEqual(ui.element('file-times-tab').getAttribute('aria-selected'), 'true');
+        assert.strictEqual(ui.element('file-times-tab').focused, true);
+        const prevented = { value: false };
+        ui.element('file-times-tab').listeners.keydown({
+            key: 'ArrowRight',
+            preventDefault: () => { prevented.value = true; },
+        });
+        assert.strictEqual(prevented.value, true);
+        assert.strictEqual(ui.element('entries-tab').getAttribute('aria-selected'), 'true');
+    });
     test('keeps edits made while a new row is being saved', () => {
         const ui = frontend();
         ui.send('state', { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null });
@@ -440,6 +465,7 @@ suite('Manual timesheet', () => {
         vm.runInContext('saveRow(rowEvent)', ui.context);
         assert.strictEqual(ui.messages.length, count);
         assert.strictEqual(task.attributes['aria-invalid'], 'true');
+        assert.strictEqual(task.focused, true);
         ui.send('saved', state);
         assert.match(ui.element('report-body').innerHTML, /value="08:30"/);
         assert.match(ui.element('report-body').innerHTML, /Incomplete/);
@@ -474,17 +500,29 @@ suite('Manual timesheet', () => {
         assert.match(ui.element('print-summary').innerHTML, /<div class="metric screen-only"><strong>25[.,]00<\/strong><span>Estimated value \(informational\)<\/span><\/div>/);
         assert.match((0, webview_1.getWebviewHtml)({ cspSource: 'test' }), /@media print\s*\{[\s\S]*?\.screen-only[^{]*\{[^}]*display:\s*none\s*!important/);
     });
+    test('includes tab semantics and forced-colors fallbacks in timesheet markup', () => {
+        const html = (0, webview_1.getWebviewHtml)({ cspSource: 'test' });
+        assert.match(html, /role="tablist" aria-label="Timesheet views"/);
+        assert.match(html, /id="entries-tab" role="tab" aria-selected="true"[^>]*tabindex="0"/);
+        assert.match(html, /id="report-tab" role="tab" aria-selected="false"[^>]*tabindex="-1"/);
+        assert.match(html, /@media \(forced-colors: active\)/);
+        assert.match(html, /outline: 2px solid Highlight/);
+        assert.match(html, /tr\.incomplete[\s\S]*?border-inline-start: 3px solid Highlight/);
+    });
     test('counts only positive or currently eligible file rows', () => {
         const ui = frontend();
         const state = { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: { a: 0, b: 60000 }, activeFile: 'a', paused: false, excluded: false };
         ui.send('state', state);
         assert.strictEqual(ui.element('tracked-file-count').textContent, '2');
+        assert.match(ui.element('tracking-status').textContent, /running/);
         ui.send('fileTimes', { ...state, excluded: true });
         assert.strictEqual(ui.element('tracked-file-count').textContent, '1');
         assert.match(ui.element('tracking-status').textContent, /excluded/);
         ui.send('fileTimes', { ...state, paused: true });
         assert.strictEqual(ui.element('tracked-file-count').textContent, '1');
         assert.match(ui.element('tracking-status').textContent, /paused/);
+        ui.send('fileTimes', { ...state, activeFile: null, paused: false, excluded: false });
+        assert.match(ui.element('tracking-status').textContent, /Waiting for a focused local file/);
     });
 });
 //# sourceMappingURL=timeData.test.js.map

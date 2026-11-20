@@ -10,7 +10,7 @@ Plans 004-008 extend that set from `docs/prd.md` and the current working tree.
 | 001 | Prevent duplicate manual entries | P1 | S | — | DONE |
 | 002 | Restore the extension CI verification gate | P1 | S | — | TODO |
 | 003 | Remove unreferenced legacy timer modules | P2 | S | — | DONE |
-| 004 | Verify accessibility and visual modes | P1 | M | 002 | TODO |
+| 004 | Verify accessibility and visual modes | P1 | M | 002 | DONE |
 | 005 | Verify extension host and packaged VSIX | P0 | M | 002 | TODO |
 | 006 | Verify in-host file-activity performance | P1 | S | 002 | TODO |
 | 008 | Export and import timesheet data | P1 | M | 002 | DONE |

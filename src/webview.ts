@@ -66,6 +66,16 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 #report-table tr.weekend td:nth-child(2)::after { content: ' (Weekend)'; font-weight: 600; }
 #print-warning { margin: 0 0 8px; color: var(--warning); }
 .error { min-height: 20px; color: var(--vscode-errorForeground); padding: 5px 0; }
+@media (forced-colors: active) {
+	* { box-shadow: none !important; text-shadow: none !important; }
+	body, header, th { background: Canvas; color: CanvasText; }
+	button, input, select { border: 1px solid ButtonText; }
+	button[aria-selected="true"] { border: 3px double Highlight; }
+	button:focus-visible, input:focus, select:focus { outline: 2px solid Highlight; }
+	tr.weekend { outline: 1px dashed CanvasText; outline-offset: -1px; }
+	tr.incomplete { border-inline-start: 3px solid Highlight; }
+	.error, .warning-text, #print-warning { color: CanvasText; }
+}
 @media (max-width: 700px) { body { padding: 0 10px 20px; } .toolbar { align-items: start; } .tabs { display: flex; flex-wrap: wrap; width: 100%; } .filters > label, .period-controls > label { flex: 1 1 130px; } }
 @media print {
 	@page { size: A4 landscape; margin: 7mm; }
@@ -92,11 +102,11 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <body>
 <header>
 <h1>Time Tracker</h1>
-<nav class="tabs" aria-label="Timesheet views">
-<button id="entries-tab" role="tab" aria-selected="true" aria-controls="entries-view">Entries</button>
-<button id="report-tab" role="tab" aria-selected="false" aria-controls="report-view">Period report</button>
-<button id="holidays-tab" role="tab" aria-selected="false" aria-controls="holidays-view">Public holidays</button>
-<button id="file-times-tab" role="tab" aria-selected="false" aria-controls="file-times-view">File activity</button>
+<nav class="tabs" role="tablist" aria-label="Timesheet views" aria-orientation="horizontal">
+<button id="entries-tab" role="tab" aria-selected="true" aria-controls="entries-view" tabindex="0">Entries</button>
+<button id="report-tab" role="tab" aria-selected="false" aria-controls="report-view" tabindex="-1">Period report</button>
+<button id="holidays-tab" role="tab" aria-selected="false" aria-controls="holidays-view" tabindex="-1">Public holidays</button>
+<button id="file-times-tab" role="tab" aria-selected="false" aria-controls="file-times-view" tabindex="-1">File activity</button>
 </nav>
 </header>
 <main>
@@ -229,8 +239,9 @@ function renderHolidays() {
 function allEntries() { return Object.values(data.entries).reduce((entries, value) => entries.concat(Array.isArray(value) ? value : value ? [value] : []), []); }
 function draftKey(date, id) { return id || 'new:' + date; }
 function sameEntry(a, b) { return (!a && !b) || Boolean(a && b && a.id === b.id && a.date === b.date && a.task === b.task && a.timeIn === b.timeIn && a.timeOut === b.timeOut); }
-function fieldError(input, errorId, message) {
+function fieldError(input, errorId, message, focus = false) {
  input.setAttribute('aria-invalid', String(Boolean(message))); setError(errorId, message);
+ if (message && focus) input.focus();
 }
 function validateRow(entry, fields, errorId, allowBlank) {
  Object.values(fields).forEach((input) => input.removeAttribute('aria-invalid'));
@@ -239,7 +250,7 @@ function validateRow(entry, fields, errorId, allowBlank) {
  else if ((!allowBlank || entry.timeIn || entry.timeOut) && !entry.task.trim()) { field = fields.task; message = 'Enter a task description.'; }
  else if (fields.timeIn.validity.badInput || (entry.timeIn && !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(entry.timeIn))) { field = fields.timeIn; message = 'Time In must use 24-hour HH:mm format.'; }
  else if (fields.timeOut.validity.badInput || (entry.timeOut && !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(entry.timeOut))) { field = fields.timeOut; message = 'Time Out must use 24-hour HH:mm format.'; }
- if (field) { fieldError(field, errorId, message); return false; }
+ if (field) { fieldError(field, errorId, message, true); return false; }
  setError(errorId, ''); return true;
 }
 function renderYearSelect() {
@@ -347,7 +358,10 @@ function renderFileTimes() {
  byId('tracked-total').textContent = durationText(Math.floor(total / 60000));
  byId('tracked-file-count').textContent = String(files.length);
  byId('tracked-active-file').textContent = data.activeFile || 'No file active';
- byId('tracking-status').textContent = data.excluded ? 'Current file excluded from automatic tracking' : data.paused ? 'Automatic tracking paused' : '';
+ byId('tracking-status').textContent = data.excluded
+  ? 'Current file excluded from automatic tracking'
+  : data.paused ? 'Automatic tracking paused'
+  : data.activeFile ? 'Automatic tracking running' : 'Waiting for a focused local file';
  byId('file-times-body').innerHTML = files.length
   ? files.map(([file, milliseconds]) => '<tr><td class="file">' + esc(file) + '</td><td class="duration">' + durationText(Math.floor(milliseconds / 60000)) + '</td><td>' + (file === data.activeFile ? (data.excluded ? 'Excluded' : data.paused ? 'Paused' : 'Active') : '') + '</td></tr>').join('')
   : '<tr><td colspan="3" class="subtle">No files tracked yet.</td></tr>';
@@ -418,22 +432,36 @@ function saveEntryRow(event, errorId, view) {
   : { type: 'createEntry', entry, requestId, view });
 }
 function render() { renderEntries(); renderSummary(); renderReport(); renderHolidays(); renderFileTimes(); }
-function setView(view) {
+function setView(view, focusTab = false) {
  if (view === 'entries' && byId('entries-view').hidden) renderEntries();
  if (view === 'report' && byId('report-view').hidden) renderReport();
  byId('entries-view').hidden = view !== 'entries'; byId('report-view').hidden = view !== 'report'; byId('holidays-view').hidden = view !== 'holidays'; byId('file-times-view').hidden = view !== 'file-times';
  byId('entries-tab').setAttribute('aria-selected', String(view === 'entries')); byId('report-tab').setAttribute('aria-selected', String(view === 'report')); byId('holidays-tab').setAttribute('aria-selected', String(view === 'holidays')); byId('file-times-tab').setAttribute('aria-selected', String(view === 'file-times'));
+ const tabs = ['entries', 'report', 'holidays', 'file-times'];
+ tabs.forEach((name) => byId(name + '-tab').tabIndex = name === view ? 0 : -1);
+ if (focusTab) byId(view + '-tab').focus();
 }
-byId('entries-tab').addEventListener('click', () => setView('entries'));
-byId('report-tab').addEventListener('click', () => setView('report'));
-byId('holidays-tab').addEventListener('click', () => setView('holidays'));
-byId('file-times-tab').addEventListener('click', () => setView('file-times'));
+const tabNames = ['entries', 'report', 'holidays', 'file-times'];
+tabNames.forEach((name, index) => {
+ const tab = byId(name + '-tab');
+ tab.addEventListener('click', () => setView(name, true));
+ tab.addEventListener('keydown', (event) => {
+  let next = index;
+  if (event.key === 'ArrowRight') next = (index + 1) % tabNames.length;
+  else if (event.key === 'ArrowLeft') next = (index - 1 + tabNames.length) % tabNames.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = tabNames.length - 1;
+  else return;
+  event.preventDefault();
+  setView(tabNames[next], true);
+ });
+});
 byId('holiday-date').value = localDateValue();
 byId('holiday-form').addEventListener('submit', (event) => {
  event.preventDefault();
  const date = byId('holiday-date'); const name = byId('holiday-name');
- if (!validDate(date.value) || date.validity.badInput) { fieldError(date, 'holidays-error', 'Enter a valid holiday date.'); return; }
- if (!name.value.trim() || name.value.length > 240 || /[\\x00-\\x1f\\x7f]/.test(name.value)) { fieldError(name, 'holidays-error', 'Enter a holiday name of up to 240 characters without control characters.'); return; }
+ if (!validDate(date.value) || date.validity.badInput) { fieldError(date, 'holidays-error', 'Enter a valid holiday date.', true); return; }
+ if (!name.value.trim() || name.value.length > 240 || /[\\x00-\\x1f\\x7f]/.test(name.value)) { fieldError(name, 'holidays-error', 'Enter a holiday name of up to 240 characters without control characters.', true); return; }
  date.removeAttribute('aria-invalid'); name.removeAttribute('aria-invalid'); setError('holidays-error', '');
  vscode.postMessage({ type: 'addHoliday', holiday: { date: date.value, name: name.value.trim() }, view: 'holidays' });
 });
@@ -465,7 +493,7 @@ byId('save-period').addEventListener('click', () => {
  const input = byId('period-start');
  periodDraft = periodDraft || { value: input.value, expectedValue: data.periodStart, pending: false };
  periodDraft.value = input.value;
- try { periodEnd(input.value); } catch (error) { fieldError(input, 'report-error', error.message); return; }
+ try { periodEnd(input.value); } catch (error) { fieldError(input, 'report-error', error.message, true); return; }
  input.removeAttribute('aria-invalid'); setError('report-error', ''); periodDraft.pending = true; renderReport();
  vscode.postMessage({ type: 'setPeriodStart', value: input.value, expectedValue: periodDraft.expectedValue });
 });
@@ -476,7 +504,7 @@ byId('hourly-rate').addEventListener('input', () => {
 byId('save-rate').addEventListener('click', () => {
  const input = byId('hourly-rate'); const value = input.value;
  rateDraft = rateDraft || { value, expectedValue: data.hourlyRate, pending: false }; rateDraft.value = value;
- if (input.validity.badInput || (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0))) { fieldError(input, 'report-error', 'Enter a valid hourly rate of zero or more.'); return; }
+ if (input.validity.badInput || (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0))) { fieldError(input, 'report-error', 'Enter a valid hourly rate of zero or more.', true); return; }
  input.removeAttribute('aria-invalid'); setError('report-error', ''); rateDraft.pending = true; renderReport();
  vscode.postMessage({ type: 'setHourlyRate', value, expectedValue: rateDraft.expectedValue });
 });

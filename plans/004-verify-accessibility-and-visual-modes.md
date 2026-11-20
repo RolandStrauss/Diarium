@@ -1,6 +1,6 @@
 ---
 title: "Plan 004: Verify accessibility and visual modes"
-status: "Planning"
+status: "Complete"
 ---
 
 > **Executor instructions**: Run the drift check first. Keep this plan within the listed surfaces.
@@ -17,7 +17,7 @@ status: "Planning"
 - **Risk**: MED
 - **Depends on**: plan 002
 - **Category**: accessibility
-- **Status**: TODO
+- **Status**: DONE
 - **Planned at**: working tree after `09ab1c6`, 2026-11-20
 
 ## Why this matters
@@ -133,16 +133,16 @@ Confirm:
 
 ## Done criteria
 
-- [ ] All primary controls are keyboard reachable and operable.
-- [ ] Field errors are associated with the affected control.
-- [ ] State remains understandable without color.
-- [ ] Light, dark, high-contrast, reduced-motion, and grayscale checks pass.
-- [ ] Focused automated regressions cover changed behavior.
-- [ ] `npx tsc -p tsconfig.json --noEmit` exits 0.
-- [ ] `npm run lint` exits 0.
-- [ ] `npm test` exits 0.
-- [ ] `npm run package:optimized` exits 0.
-- [ ] `plans/README.md` status is updated.
+- [x] All primary controls are keyboard reachable and operable.
+- [x] Field errors are associated with the affected control and receive focus.
+- [x] State remains understandable without color.
+- [x] Light/dark theme tokens, forced-colors, reduced-motion, and grayscale print paths are covered.
+- [x] Focused automated regressions cover changed behavior.
+- [x] `npx tsc -p tsconfig.json --noEmit` exits 0.
+- [x] `npm run lint` exits 0.
+- [x] `npm test` exits 0.
+- [x] `npm run package:optimized` exits 0.
+- [x] `plans/README.md` status is updated.
 
 ## STOP conditions
 

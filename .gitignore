@@ -7,7 +7,7 @@
 
 .vscode-test
 .vscode-test/*
-*.vsix
+# *.vsix
 
 # Auto-generated graphify artifacts (local-only)
 graphify-out/

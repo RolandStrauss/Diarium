@@ -134,6 +134,11 @@ button:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-off
 #toggle { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
 #toggle:hover { background: var(--vscode-button-hoverBackground); }
 button:disabled { cursor: wait; opacity: .6; }
+@media (forced-colors: active) {
+	main, button { border-color: ButtonText; background: Canvas; color: CanvasText; box-shadow: none; }
+	button:focus-visible { outline-color: Highlight; }
+	#toggle { background: ButtonFace; color: ButtonText; }
+}
 </style>
 </head>
 <body>
@@ -146,7 +151,7 @@ button:disabled { cursor: wait; opacity: .6; }
 <p id="current-file">Waiting for tracking state</p>
 <p id="status" role="status">Connecting</p>
 <div class="controls">
-<button id="toggle" type="button" disabled>Pause</button>
+<button id="toggle" type="button" aria-pressed="false" disabled>Pause</button>
 <button id="hide" type="button">Hide timer</button>
 </div>
 </main>
@@ -166,6 +171,7 @@ window.addEventListener('message', event => {
 	document.getElementById('current-file').textContent = message.currentFile;
 	document.getElementById('status').textContent = message.status;
 	toggle.textContent = message.paused ? 'Resume' : 'Pause';
+	toggle.setAttribute('aria-pressed', String(message.paused));
 	toggle.disabled = false;
 });
 vscode.postMessage({ type: 'ready' });

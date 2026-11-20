@@ -67,6 +67,10 @@ These observations describe the active working-tree code, not verified release b
   record across workspaces. Previous records remain available for recovery.
 - **Views:** Status bar opens the timesheet; File activity and the floating timer use file-tracker snapshots.
   Exclusions and confirmed reset are available through Command Palette commands.
+- **Accessibility:** Timesheet tabs use keyboard arrow, Home, and End navigation. Validation moves focus to
+  invalid fields, and tracking states use text. Timesheet and timer views use VS Code theme colors; all webviews
+  include forced-colors fallbacks. Time-card motion respects reduced-motion preferences, and standalone print
+  output is grayscale-readable.
 - **Time cards:** The active card previews all files and exports standalone HTML or paginated PDF. Duplicate
   names are numbered.
 
@@ -266,7 +270,8 @@ Requirements apply to the release target. A baseline observation in section 4 do
   apply a restrictive Content Security Policy (CSP); exported HTML needs no scripts or remote resources.
 - **Accessibility:** Support keyboard navigation and meaningful labels for all inputs and actions. Associate
   errors with their fields; do not rely on color, icons, or motion alone. Support light, dark, high-contrast,
-  reduced-motion, and grayscale output.
+  reduced-motion, and grayscale output. Use system colors in forced-colors mode and preserve readable text
+  equivalents for decorative states and progress indicators.
 - **Lifecycle:** Dispose listeners, timers, and panels when their owners close. Reopening a floating panel
   repeatedly must not multiply intervals. Preserve current command identifiers and existing valid data.
 - **Compatibility:** Target the manifest's VS Code `^1.140.0` unless a separate compatibility decision changes
@@ -318,8 +323,9 @@ points, not evidence that the full release criteria have passed. [E8]
   grayscale readability, and unsupported characters. Test print-viewer and save success, cancellation, and failure.
 - Test cards with empty data, more than five files, repeated and special-character names, long names, Unicode,
   multi-page PDFs, and preview/export snapshot equality.
-- Verify keyboard access, labels, themes, reduced motion, repeated panel open/close, and extension disposal.
-  Run supported-platform extension-host and packaged-extension smoke tests.
+- Verify keyboard access, tab focus movement, invalid-field focus, labels, theme fallbacks, reduced motion,
+  forced-colors output, repeated panel open/close, and extension disposal. Run supported-platform extension-host
+  and packaged-extension smoke tests.
 - Run `npm run compile`, `npm run lint`, and `npm test` for implementation changes. Use
   `npm run package:optimized` for release verification. Fix or replace the unverified Playwright workflow
   before relying on it; do not equate its existence with coverage.

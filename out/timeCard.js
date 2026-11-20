@@ -123,12 +123,25 @@ footer { border-top: 1px solid #b4d1bc55; margin-top: 30px; padding-top: 18px; }
 @keyframes arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @media (prefers-reduced-motion: reduce) { .card, .bar { animation: none; } }
+@media (forced-colors: active) {
+ body, .card { background: Canvas; color: CanvasText; box-shadow: none; }
+ button { border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
+ button:focus-visible { outline-color: Highlight; }
+ .eyebrow, .date, .note, .summary span, .file-time, small, .summary strong { color: CanvasText; }
+ .summary, footer { border-color: CanvasText; }
+ .track { border: 1px solid CanvasText; background: Canvas; }
+ .bar { background: Highlight; }
+}
 @media print {
  @page { size: A4; margin: 14mm; }
- body { padding: 0; background: white; }
+ body { padding: 0; background: white; color: #111; }
  .actions { display: none; }
- .card { max-width: none; border-radius: 0; box-shadow: none; padding: 20px; }
- .card, .bar { animation: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+ .card { max-width: none; border-radius: 0; box-shadow: none; padding: 20px; background: white; color: #111; }
+ .eyebrow, .date, .note, .summary span, .file-time, small, .summary strong { color: #111; }
+ .summary, footer { border-color: #777; }
+ .track { background: #ddd; border: 1px solid #777; }
+ .bar { background: #333; }
+ .card, .bar { animation: none; }
  h1, .summary, footer { break-inside: avoid; }
 }
 </style>

@@ -28,6 +28,10 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 - Timesheet PDFs use multiple landscape A4 pages when needed. Tasks support printable ASCII only; unsupported
   characters are reported instead of truncating or corrupting the report.
 - Incomplete time pairs are highlighted and excluded from totals. Entries and preferences are saved as JSON in VS Code extension storage and persist across restarts; existing extension-stored data is migrated automatically.
+- The timesheet tabs support keyboard arrow, Home, and End navigation. Validation errors move focus to the affected
+  field, and running, paused, excluded, and waiting states are announced as text.
+- Timesheet and timer webviews follow VS Code light and dark colors. All webviews include high-contrast fallbacks.
+  Time-card motion stops for reduced-motion preferences, and print output uses readable grayscale.
 
 The initial reporting period starts on 21 October 2026. Its end date is calculated automatically. The hourly estimate is informational and does not represent payroll or an invoice.
 
@@ -62,7 +66,8 @@ Run **Time Tracker: Preview Time Card** from the Command Palette, or choose
 - Cards summarize all-time automatic file activity across workspaces, not timesheet entries.
   They include idle time while VS Code is focused.
 - The preview uses a green-and-gold gradient, animated progress bars, and a responsive layout.
-  Motion stops when reduced motion is enabled and when printing.
+  Motion stops when reduced motion is enabled and when printing. Browser forced-colors mode replaces decorative
+  colors with system colors, while file durations and percentages remain text.
 - **Save HTML** exports a standalone, offline card with no scripts or external assets.
   Open it in a browser to share or print. **Save PDF** exports a static A4 card using
   the existing PDF engine. Long lists continue across pages; no files are omitted.
