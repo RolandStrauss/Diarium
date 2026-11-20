@@ -6,6 +6,10 @@
 .opencode/**
 .playwright-mcp/**
 .windsurf/**
+.fallow/**
+graphify-out/**
+plans/**
+tmp/**
 AGENTS.md
 **/.yarn/**
 .vscode/**

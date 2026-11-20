@@ -1,8 +1,13 @@
 {
-  "name": "time-tracker",
+  "name": "Diarium",
   "displayName": "Time Tracker",
   "description": "Record work time and export local timesheet reports.",
-  "version": "0.1.3",
+  "version": "0.1.4",
+  "publisher": "ferraria",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RolandStrauss/Diarium.git"
+  },
   "engines": {
     "vscode": "^1.140.0"
   },
@@ -62,7 +67,7 @@
     "pretest": "npm run compile && npm run bundle && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
-    "package:optimized": "vsce package --allow-missing-repository"
+    "package:optimized": "vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

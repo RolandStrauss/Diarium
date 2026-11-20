@@ -20,6 +20,28 @@ suite('Extension Test Suite', () => {
 		await vscode.commands.executeCommand('time-tracker.hideFloatingTimer');
 	});
 
+	test('activates in the extension host and registers every manifest command', async () => {
+		const extension = vscode.extensions.all.find(candidate =>
+			candidate.packageJSON.name === 'Diarium'
+			&& candidate.packageJSON.publisher === 'ferraria');
+		assert.ok(extension);
+
+		const commandIds = await vscode.commands.getCommands(true);
+		for (const commandId of [
+			'time-tracker.openTimesheet',
+			'time-tracker.openTimeCard',
+			'time-tracker.showFloatingTimer',
+			'time-tracker.hideFloatingTimer',
+			'time-tracker.toggleTracking',
+			'time-tracker.manageExclusions',
+			'time-tracker.resetFileTimes',
+			'time-tracker.exportTimesheet',
+			'time-tracker.importTimesheet',
+		]) {
+			assert.ok(commandIds.includes(commandId), `Missing command: ${commandId}`);
+		}
+	});
+
 	test('validates calendar dates and 24-hour times', () => {
 		assert.strictEqual(isValidDate('2024-02-29'), true);
 		assert.strictEqual(isValidDate('2025-02-29'), false);

@@ -17,7 +17,7 @@ status: "Planning"
 - **Risk**: MED
 - **Depends on**: plan 002
 - **Category**: release
-- **Status**: TODO
+- **Status**: BLOCKED
 - **Planned at**: working tree after `09ab1c6`, 2026-11-20
 
 ## Why this matters
