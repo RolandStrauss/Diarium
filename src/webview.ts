@@ -541,7 +541,7 @@ window.addEventListener('message', (event) => {
  }
  if (message.type === 'fileTimes') { data.fileTimes = message.data.fileTimes; data.activeFile = message.data.activeFile; data.paused = message.data.paused; data.excluded = message.data.excluded; data.activeEligible = message.data.activeEligible; renderFileTimes(); }
  if (message.type === 'error') {
-  if (message.requestId) {
+  if (message.requestId && Object.hasOwn(pendingFormEntries, message.requestId)) {
    delete pendingFormEntries[message.requestId];
    byId('add-submit').disabled = false;
   }

@@ -597,11 +597,11 @@ export function activate(context: vscode.ExtensionContext): void {
 						createdEntriesByRequest.set(message.requestId, { entry: candidate, operation });
 						try {
 							await operation;
-							await panel.webview.postMessage({ type: 'entryCreated', requestId: message.requestId, entry: candidate });
 						} catch (error) {
 							createdEntriesByRequest.delete(message.requestId);
 							throw error;
 						}
+						await panel.webview.postMessage({ type: 'entryCreated', requestId: message.requestId, entry: candidate });
 						break;
 					}
 					if (!isEntryId(message.id)) {
