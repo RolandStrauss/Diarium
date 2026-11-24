@@ -8,6 +8,7 @@ import {
 export interface ReportData {
 	entries: ReportEntriesByDate;
 	periodStart: string;
+	periodEnd?: string;
 	hourlyRate: number | null;
 	holidays?: PublicHoliday[];
 }
@@ -44,12 +45,12 @@ export function renderReportPdf(data: ReportData): Promise<Buffer> {
 		}
 		let end: string;
 		try {
-			end = customPeriodEnd(data.periodStart);
+			end = data.periodEnd === undefined ? customPeriodEnd(data.periodStart) : data.periodEnd;
 		} catch {
 			throw new Error('Cannot generate PDF: period end is outside the supported calendar.');
 		}
 		if (!isValidDate(end) || end < data.periodStart) {
-			throw new Error('Cannot generate PDF: period end is outside the supported calendar.');
+			throw new Error('Cannot generate PDF: invalid period end or period end precedes period start.');
 		}
 
 		const document = new PDFDocument({

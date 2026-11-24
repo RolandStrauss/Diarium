@@ -111,7 +111,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 </header>
 <main>
 <section id="entries-view" class="view" role="tabpanel" aria-labelledby="entries-tab">
-<div class="toolbar"><div><label for="year-select">Calendar year</label><select id="year-select"></select></div><p class="subtle">Add multiple entries per date. Overnight shifts are calculated automatically.</p></div>
+<div class="toolbar"><div><label for="year-select">Calendar year</label><select id="year-select"></select></div><p class="subtle">Add multiple entries per date. Overnight shifts are calculated automatically.</p><button id="import-outlook-calendar" type="button">Import Outlook Calendar</button></div>
 <div class="period-controls">
 <label>Summary period<select id="summary-kind" aria-label="Summary period"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
 <label>Summary date<input id="summary-date" type="date" aria-label="Summary date" aria-describedby="entries-error"></label>
@@ -172,7 +172,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <section id="report-view" class="view" role="tabpanel" aria-labelledby="report-tab" hidden>
 <div class="period-controls screen-only">
 <label>Period start<input id="period-start" type="date" aria-label="Period start date" aria-describedby="report-error"></label>
-<label>Period end<input id="period-end" type="date" readonly aria-label="Calculated period end date"></label>
+<label>Period end<input id="period-end" type="date" aria-label="Period end date" aria-describedby="report-error"></label>
 <label>Hourly rate<input id="hourly-rate" type="number" min="0" step="any" placeholder="Not set" aria-label="Hourly rate" aria-describedby="report-error"></label>
 <button id="save-period" type="button" hidden>Save period draft</button>
 <button id="discard-period" type="button" hidden>Discard period draft</button>
@@ -193,7 +193,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <script nonce="${scriptNonce}">
 const vscode = acquireVsCodeApi();
 const byId = (id) => document.getElementById(id);
-let data = { entries: {}, holidays: [], periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null, paused: false, excluded: false };
+let data = { entries: {}, holidays: [], periodStart: '2026-10-21', periodEnd: '2026-11-20', hourlyRate: null, fileTimes: {}, activeFile: null, paused: false, excluded: false };
 const drafts = {}; const pendingFormEntries = {};
 let periodDraft = null; let rateDraft = null; let renderPending = false; let nextRequestId = 0;
 const dateFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -372,13 +372,12 @@ function renderFileTimes() {
   : '<tr><td colspan="3" class="subtle">No files tracked yet.</td></tr>';
 }
 function renderReport() {
- const start = data.periodStart || '2026-10-21'; let end;
- try { end = periodEnd(start); } catch (error) { fieldError(byId('period-start'), 'report-error', error.message); byId('report-body').innerHTML = ''; byId('period-end').value = ''; return; }
- byId('period-start').value = periodDraft ? periodDraft.value : start; byId('period-end').value = end;
+ const start = data.periodStart; const end = data.periodEnd;
+ byId('period-start').value = periodDraft ? periodDraft.start : start; byId('period-end').value = periodDraft ? periodDraft.end : end;
  byId('hourly-rate').value = rateDraft ? rateDraft.value : (data.hourlyRate === null ? '' : String(data.hourlyRate));
  byId('save-period').hidden = byId('discard-period').hidden = !periodDraft;
  byId('save-rate').hidden = byId('discard-rate').hidden = !rateDraft;
- byId('period-start').disabled = byId('save-period').disabled = byId('discard-period').disabled = Boolean(periodDraft?.pending);
+ byId('period-start').disabled = byId('period-end').disabled = byId('save-period').disabled = byId('discard-period').disabled = Boolean(periodDraft?.pending);
  byId('hourly-rate').disabled = byId('save-rate').disabled = byId('discard-rate').disabled = Boolean(rateDraft?.pending);
  byId('report-title').textContent = 'Period report: ' + dateText(start) + ' to ' + dateText(end);
  let total = 0; const loggedDates = new Set(); const rows = [];
@@ -477,6 +476,9 @@ byId('summary-date').addEventListener('change', renderSummary);
 byId('filter-date').addEventListener('change', () => { if (validDate(byId('filter-date').value)) { byId('filter-date').removeAttribute('aria-invalid'); renderYearSelect(); byId('year-select').value = String(Number(byId('filter-date').value.slice(0, 4))); } renderEntries(); });
 byId('filter-task').addEventListener('input', renderEntries);
 byId('clear-filters').addEventListener('click', () => { byId('filter-date').value = ''; byId('filter-task').value = ''; renderEntries(); });
+byId('import-outlook-calendar').addEventListener('click', () => {
+ vscode.postMessage({ type: 'importOutlookCalendar', view: 'entries' });
+});
 byId('add-date').value = localDateValue();
 byId('add-form').addEventListener('submit', (event) => {
  event.preventDefault();
@@ -490,17 +492,21 @@ byId('add-form').addEventListener('submit', (event) => {
  submit.disabled = true;
  vscode.postMessage({ type: 'createEntry', entry, requestId });
 });
-byId('period-start').addEventListener('input', () => {
- periodDraft = { value: byId('period-start').value, expectedValue: periodDraft ? periodDraft.expectedValue : data.periodStart, pending: false };
+function rememberPeriod() {
+ periodDraft = { start: byId('period-start').value, end: byId('period-end').value, expectedStart: periodDraft ? periodDraft.expectedStart : data.periodStart, expectedEnd: periodDraft ? periodDraft.expectedEnd : data.periodEnd, pending: false };
  byId('save-period').hidden = byId('discard-period').hidden = false;
-});
+}
+byId('period-start').addEventListener('input', rememberPeriod);
+byId('period-end').addEventListener('input', rememberPeriod);
 byId('save-period').addEventListener('click', () => {
- const input = byId('period-start');
- periodDraft = periodDraft || { value: input.value, expectedValue: data.periodStart, pending: false };
- periodDraft.value = input.value;
- try { periodEnd(input.value); } catch (error) { fieldError(input, 'report-error', error.message, true); return; }
- input.removeAttribute('aria-invalid'); setError('report-error', ''); periodDraft.pending = true; renderReport();
- vscode.postMessage({ type: 'setPeriodStart', value: input.value, expectedValue: periodDraft.expectedValue });
+ const start = byId('period-start'); const end = byId('period-end');
+ if (!periodDraft) rememberPeriod();
+ periodDraft.start = start.value; periodDraft.end = end.value;
+ if (!validDate(start.value)) { fieldError(start, 'report-error', 'Enter a valid period start date.', true); return; }
+ if (!validDate(end.value)) { fieldError(end, 'report-error', 'Enter a valid period end date.', true); return; }
+ if (end.value < start.value) { fieldError(end, 'report-error', 'Period end must be on or after period start.', true); return; }
+ start.removeAttribute('aria-invalid'); end.removeAttribute('aria-invalid'); setError('report-error', ''); periodDraft.pending = true; renderReport();
+ vscode.postMessage({ type: 'setPeriod', periodStart: start.value, periodEnd: end.value, expectedStart: periodDraft.expectedStart, expectedEnd: periodDraft.expectedEnd });
 });
 byId('hourly-rate').addEventListener('input', () => {
  rateDraft = { value: byId('hourly-rate').value, expectedValue: rateDraft ? rateDraft.expectedValue : data.hourlyRate, pending: false };
@@ -513,7 +519,7 @@ byId('save-rate').addEventListener('click', () => {
  input.removeAttribute('aria-invalid'); setError('report-error', ''); rateDraft.pending = true; renderReport();
  vscode.postMessage({ type: 'setHourlyRate', value, expectedValue: rateDraft.expectedValue });
 });
-byId('discard-period').addEventListener('click', () => { periodDraft = null; setError('report-error', ''); renderReport(); });
+byId('discard-period').addEventListener('click', () => { periodDraft = null; byId('period-start').removeAttribute('aria-invalid'); byId('period-end').removeAttribute('aria-invalid'); setError('report-error', ''); renderReport(); });
 byId('discard-rate').addEventListener('click', () => { rateDraft = null; setError('report-error', ''); renderReport(); });
 byId('print-button').addEventListener('click', () => {
  if (Object.keys(drafts).length || periodDraft || rateDraft) { setError('report-error', 'Save or discard unsaved changes before exporting the report.'); return; }
@@ -565,11 +571,11 @@ window.addEventListener('message', (event) => {
    const text = 'An entry changed elsewhere. Your draft is retained; copy it or discard it before editing the latest entry.';
    setError('entries-error', text); setError('report-error', text);
   }
-  if (periodDraft?.pending && periodDraft.value === data.periodStart) periodDraft = null;
+  if (periodDraft?.pending && periodDraft.start === data.periodStart && periodDraft.end === data.periodEnd) periodDraft = null;
   if (rateDraft?.pending && (rateDraft.value === '' ? null : Number(rateDraft.value)) === data.hourlyRate) rateDraft = null;
-  if ((periodDraft && periodDraft.expectedValue !== data.periodStart) || (rateDraft && rateDraft.expectedValue !== data.hourlyRate)) setError('report-error', 'A setting changed elsewhere. Your draft is retained; copy it or discard it before editing the latest value.');
+  if ((periodDraft && (periodDraft.expectedStart !== data.periodStart || periodDraft.expectedEnd !== data.periodEnd)) || (rateDraft && rateDraft.expectedValue !== data.hourlyRate)) setError('report-error', 'A setting changed elsewhere. Your draft is retained; copy it or discard it before editing the latest value.');
   const active = document.activeElement;
-  if (active && ((active.closest('tr[data-date]') && drafts[draftKey(active.closest('tr[data-date]').dataset.date, active.closest('tr[data-date]').dataset.id)]) || (active.id === 'period-start' && periodDraft) || (active.id === 'hourly-rate' && rateDraft))) { renderPending = true; renderFileTimes(); }
+  if (active && ((active.closest('tr[data-date]') && drafts[draftKey(active.closest('tr[data-date]').dataset.date, active.closest('tr[data-date]').dataset.id)]) || ((active.id === 'period-start' || active.id === 'period-end') && periodDraft) || (active.id === 'hourly-rate' && rateDraft))) { renderPending = true; renderFileTimes(); }
   else { renderYearSelect(); render(); }
  }
  if (message.type === 'fileTimes') { data.fileTimes = message.data.fileTimes; data.activeFile = message.data.activeFile; data.paused = message.data.paused; data.excluded = message.data.excluded; data.activeEligible = message.data.activeEligible; renderFileTimes(); }
@@ -583,13 +589,13 @@ window.addEventListener('message', (event) => {
     ? item.requestId === message.requestId : item.id === message.id);
    if (draft) draft.pending = false;
   }
-  if (message.operation === 'setPeriodStart' && periodDraft) periodDraft.pending = false;
+  if (message.operation === 'setPeriod' && periodDraft) periodDraft.pending = false;
   if (message.operation === 'setHourlyRate' && rateDraft) rateDraft.pending = false;
   setError(message.view === 'report' ? 'report-error' : message.view === 'holidays' ? 'holidays-error' : 'entries-error', message.message);
   if (Object.keys(drafts).length || periodDraft || rateDraft) {
    vscode.postMessage({ type: 'ready' });
    const active = document.activeElement;
-   if (active && (active.closest('tr[data-date]') || active.id === 'period-start' || active.id === 'hourly-rate')) renderPending = true;
+   if (active && (active.closest('tr[data-date]') || active.id === 'period-start' || active.id === 'period-end' || active.id === 'hourly-rate')) renderPending = true;
    else { renderEntries(); renderReport(); }
   }
  }

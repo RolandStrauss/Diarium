@@ -46,6 +46,7 @@ const first = {
             }],
     },
     periodStart: '2026-10-21',
+    periodEnd: '2026-11-20',
     hourlyRate: 42.5,
     holidays: [{ date: '2026-11-01', name: 'Local holiday' }],
 };
@@ -61,6 +62,7 @@ suite('Timesheet transfer', () => {
         });
         assert.deepStrictEqual(JSON.parse(JSON.stringify((0, extension_1.parseTimesheetTransfer)(JSON.stringify(transfer)))), { entries: first.entries, holidays: first.holidays });
         assert.ok(!Object.hasOwn(transfer, 'periodStart'));
+        assert.ok(!Object.hasOwn(transfer, 'periodEnd'));
         assert.ok(!Object.hasOwn(transfer, 'hourlyRate'));
         assert.ok(!Object.hasOwn(transfer, 'fileTimes'));
     });
@@ -109,6 +111,7 @@ suite('Timesheet transfer', () => {
         assert.strictEqual(merged.addedEntries, 1);
         assert.strictEqual(merged.addedHolidays, 1);
         assert.strictEqual(merged.state.periodStart, first.periodStart);
+        assert.strictEqual(merged.state.periodEnd, first.periodEnd);
         assert.strictEqual(merged.state.hourlyRate, first.hourlyRate);
         assert.deepStrictEqual(merged.state.entries['2026-11-02'], [added]);
         assert.strictEqual((0, extension_1.mergeTimesheetTransfer)(merged.state, imported).addedEntries, 0);

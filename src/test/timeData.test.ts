@@ -1,6 +1,6 @@
 import * as assert from 'node:assert';
 import * as vm from 'node:vm';
-import { addDays, customPeriodEnd, durationMinutes, isValidDate, periodRange, sortEntriesByTimeIn, validateEntry } from '../timeData';
+import { addDays, customPeriodEnd, durationMinutes, isValidDate, parseOutlookCalendarIcs, periodRange, sortEntriesByTimeIn, validateEntry } from '../timeData';
 import { getWebviewHtml } from '../webview';
 
 suite('Manual timesheet', () => {
@@ -44,6 +44,36 @@ suite('Manual timesheet', () => {
 		];
 		assert.deepStrictEqual(sortEntriesByTimeIn(entries).map(entry => entry.task), ['Earlier', 'Later', 'Blank']);
 		assert.deepStrictEqual(entries.map(entry => entry.task), ['Blank', 'Later', 'Earlier']);
+	});
+
+	test('parses timed and all-day Outlook calendar entries', () => {
+		const ics = [
+			'BEGIN:VCALENDAR',
+			'BEGIN:VEVENT',
+			'UID:meeting-1',
+			'DTSTART:20261124T090000',
+			'DTEND:20261124T103000',
+			'SUMMARY:Planning\\, review',
+			'END:VEVENT',
+			'BEGIN:VEVENT',
+			'UID:holiday-1',
+			'DTSTART;VALUE=DATE:20261125',
+			'SUMMARY:Team event',
+			'END:VEVENT',
+			'BEGIN:VEVENT',
+			'STATUS:CANCELLED',
+			'UID:cancelled-1',
+			'DTSTART:20261126T090000',
+			'DTEND:20261126T100000',
+			'SUMMARY:Cancelled',
+			'END:VEVENT',
+			'END:VCALENDAR',
+		].join('\r\n');
+
+		assert.deepStrictEqual(parseOutlookCalendarIcs(ics), [
+			{ date: '2026-11-24', task: 'Planning, review', timeIn: '09:00', timeOut: '10:30' },
+			{ date: '2026-11-25', task: 'Team event', timeIn: '', timeOut: '' },
+		]);
 	});
 
 	class Element {
@@ -95,9 +125,13 @@ suite('Manual timesheet', () => {
 		});
 		vm.runInContext(script, context);
 		const element = (id: string) => document.getElementById(id);
-		const send = (type: string, data: object) => receive({
-			data: { type, data: structuredClone(type === 'state' || type === 'saved' ? { holidays: [], ...data } : data) },
-		});
+		const send = (type: string, data: object) => {
+			const state = data as { periodStart?: string; periodEnd?: string };
+			receive({
+				data: { type, data: structuredClone(type === 'state' || type === 'saved'
+					? { holidays: [], periodEnd: state.periodStart ? customPeriodEnd(state.periodStart) : undefined, ...data } : data) },
+			});
+		};
 		return { context, document, element, messages, send, deliver: (message: object) => receive({ data: message }) };
 	}
 
@@ -166,16 +200,44 @@ suite('Manual timesheet', () => {
 		ui.element('period-start').dispatch('change');
 		assert.strictEqual(ui.messages.length, count);
 		ui.element('save-period').dispatch('click');
-		assert.deepStrictEqual({ ...ui.messages.at(-1) }, { type: 'setPeriodStart', value: '2026-01-31', expectedValue: '2026-10-21' });
+		assert.deepStrictEqual({ ...ui.messages.at(-1) }, { type: 'setPeriod', periodStart: '2026-01-31', periodEnd: '2026-11-20', expectedStart: '2026-10-21', expectedEnd: '2026-11-20' });
 		ui.element('hourly-rate').value = '12.5'; ui.element('hourly-rate').dispatch('input');
 		ui.send('saved', { ...state, periodStart: '2026-11-21', hourlyRate: 15 });
 		assert.strictEqual(ui.element('hourly-rate').value, '12.5');
 		ui.element('save-rate').dispatch('click');
 		assert.deepStrictEqual({ ...ui.messages.at(-1) }, { type: 'setHourlyRate', value: '12.5', expectedValue: 10 });
-		ui.deliver({ type: 'error', operation: 'setPeriodStart', view: 'report', message: 'Conflict' });
+		ui.deliver({ type: 'error', operation: 'setPeriod', view: 'report', message: 'Conflict' });
 		ui.element('period-start').value = '9999-12-02'; ui.element('period-start').dispatch('input');
 		ui.element('save-period').dispatch('click');
-		assert.match(ui.element('report-error').textContent, /four-digit/);
+		assert.match(ui.element('report-error').textContent, /on or after/);
+	});
+
+	test('applies both inclusive report dates and rejects invalid period drafts', () => {
+		const ui = frontend();
+		const state = { entries: {}, periodStart: '2026-10-21', periodEnd: '2026-11-20', hourlyRate: null, fileTimes: {}, activeFile: null };
+		ui.send('state', state);
+		ui.element('period-start').value = '2026-12-31'; ui.element('period-start').dispatch('input');
+		ui.element('period-end').value = '2027-01-02'; ui.element('period-end').dispatch('input');
+		ui.element('save-period').dispatch('click');
+		assert.deepStrictEqual({ ...ui.messages.at(-1) }, {
+			type: 'setPeriod', periodStart: '2026-12-31', periodEnd: '2027-01-02',
+			expectedStart: state.periodStart, expectedEnd: state.periodEnd,
+		});
+		ui.send('saved', { ...state, periodStart: '2026-12-31', periodEnd: '2027-01-02' });
+		assert.match(ui.element('report-body').innerHTML, /2026-12-31/);
+		assert.match(ui.element('report-body').innerHTML, /2027-01-02/);
+		assert.doesNotMatch(ui.element('report-body').innerHTML, /2027-01-03/);
+		ui.element('period-end').value = '2026-12-30'; ui.element('period-end').dispatch('input');
+		const count = ui.messages.length;
+		ui.element('save-period').dispatch('click');
+		assert.strictEqual(ui.messages.length, count);
+		assert.match(ui.element('report-error').textContent, /on or after/);
+		assert.strictEqual(ui.element('period-end').getAttribute('aria-invalid'), 'true');
+		ui.element('print-button').dispatch('click');
+		assert.strictEqual(ui.messages.length, count);
+		ui.element('discard-period').dispatch('click');
+		assert.strictEqual(ui.element('period-end').getAttribute('aria-invalid'), null);
+		assert.strictEqual(ui.element('period-end').value, '2027-01-02');
 	});
 
 	test('matches browser period calculations at calendar boundaries', () => {
@@ -250,6 +312,7 @@ suite('Manual timesheet', () => {
 		const count = ui.messages.length;
 		vm.runInContext('rememberRow(firstEvent); rememberRow(secondEvent)', ui.context);
 		ui.element('period-start').value = '2026-11-21'; ui.element('period-start').dispatch('input');
+		ui.element('period-end').value = '2026-12-20'; ui.element('period-end').dispatch('input');
 		ui.element('hourly-rate').value = '20'; ui.element('hourly-rate').dispatch('input');
 		assert.strictEqual(ui.messages.length, count);
 		vm.runInContext('discardDraft(firstEvent)', ui.context);
@@ -304,7 +367,7 @@ suite('Manual timesheet', () => {
 		ui.element('hourly-rate').value = '20'; ui.element('hourly-rate').dispatch('input');
 		ui.element('save-period').dispatch('click');
 		ui.element('save-rate').dispatch('click');
-		ui.deliver({ type: 'error', operation: 'setPeriodStart', view: 'report', message: 'Save failed' });
+		ui.deliver({ type: 'error', operation: 'setPeriod', view: 'report', message: 'Save failed' });
 		assert.strictEqual(ui.element('save-period').disabled, false);
 		assert.strictEqual(ui.element('save-rate').disabled, true);
 		assert.strictEqual(ui.element('period-start').value, '2026-11-21');
@@ -466,6 +529,7 @@ suite('Manual timesheet', () => {
 		assert.match(html, /role="tablist" aria-label="Timesheet views"/);
 		assert.match(html, /id="entries-tab" role="tab" aria-selected="true"[^>]*tabindex="0"/);
 		assert.match(html, /id="report-tab" role="tab" aria-selected="false"[^>]*tabindex="-1"/);
+		assert.match(html, /id="import-outlook-calendar"[^>]*>Import Outlook Calendar<\/button>/);
 		assert.match(html, /@media \(forced-colors: active\)/);
 		assert.match(html, /outline: 2px solid Highlight/);
 		assert.match(html, /tr\.incomplete[\s\S]*?border-inline-start: 3px solid Highlight/);

@@ -35,13 +35,13 @@ function renderReportPdf(data) {
         }
         let end;
         try {
-            end = (0, timeData_1.customPeriodEnd)(data.periodStart);
+            end = data.periodEnd === undefined ? (0, timeData_1.customPeriodEnd)(data.periodStart) : data.periodEnd;
         }
         catch {
             throw new Error('Cannot generate PDF: period end is outside the supported calendar.');
         }
         if (!(0, timeData_1.isValidDate)(end) || end < data.periodStart) {
-            throw new Error('Cannot generate PDF: period end is outside the supported calendar.');
+            throw new Error('Cannot generate PDF: invalid period end or period end precedes period start.');
         }
         const document = new pdfkit_1.default({
             layout: 'landscape',

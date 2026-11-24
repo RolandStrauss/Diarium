@@ -66,6 +66,7 @@ suite('Report actions', () => {
         let editorChanged;
         let focusChanged;
         let saveDialogs = 0;
+        let suggestedSavePath = '';
         const statusBarItems = [];
         const api = {
             commands: {
@@ -123,12 +124,23 @@ suite('Report actions', () => {
                 onDidChangeWindowState: (callback) => { focusChanged = callback; return { dispose: () => { } }; },
                 showQuickPick: async (items) => options.chooseExclusion
                     ? items[0] : action ? { value: action } : undefined,
-                showWarningMessage: async (message) => /Import .* new entries/.test(message)
-                    ? options.confirmImport ? 'Import' : undefined
+                showWarningMessage: async (message) => /Import .* (?:new entries|calendar (?:entry|entries))/.test(message)
+                    ? (() => {
+                        return options.confirmImport ? 'Import' : undefined;
+                    })()
                     : options.confirmReset ? 'Reset' : undefined,
-                showOpenDialog: async () => options.importPath ? [{ fsPath: options.importPath }] : undefined,
-                showSaveDialog: async () => {
+                showOpenDialog: async (dialogOptions) => {
+                    if (options.calendarImportPath) {
+                        return [{ fsPath: options.calendarImportPath }];
+                    }
+                    if (dialogOptions?.filters?.['Outlook Calendar'] && options.calendarImportPath) {
+                        return [{ fsPath: options.calendarImportPath }];
+                    }
+                    return options.importPath ? [{ fsPath: options.importPath }] : undefined;
+                },
+                showSaveDialog: async (dialog) => {
                     saveDialogs++;
+                    suggestedSavePath = dialog.defaultUri.fsPath;
                     return options.cancelSave ? undefined : {
                         fsPath: options.savePath ?? path.join(directory, options.failSave ? 'missing\\saved-report.pdf' : 'saved-report.pdf'),
                     };
@@ -189,6 +201,7 @@ suite('Report actions', () => {
         return { opened, errors, information, messages, saveDialogs, receiveMessage: receiver, statusBarItems,
             getHtml: () => html, getReceiver: () => receiveMessage,
             getSaveDialogs: () => saveDialogs,
+            getSuggestedSavePath: () => suggestedSavePath,
             commands, intervals, api, context, activityWrites, deactivate: module.exports.deactivate,
             getPanelCount: () => panelsCreated, getReveals: () => reveals, getWrites: () => writes,
             failPersistence: () => { failPersistence = true; },
@@ -348,7 +361,7 @@ suite('Report actions', () => {
         const holiday = { date: entry.date, name: 'Holiday' };
         await first.receiveMessage({ type: 'createEntry', entry, requestId: 'entry' });
         await first.receiveMessage({ type: 'createEntry', entry: secondEntry, requestId: 'second-entry' });
-        await first.receiveMessage({ type: 'setPeriodStart', value: '2026-11-21', expectedValue: '2026-10-21' });
+        await first.receiveMessage({ type: 'setPeriod', periodStart: '2026-11-21', periodEnd: '2026-12-05', expectedStart: '2026-10-21', expectedEnd: '2026-11-20' });
         await first.receiveMessage({ type: 'setHourlyRate', value: '42.5', expectedValue: null });
         await first.receiveMessage({ type: 'addHoliday', holiday });
         const saved = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
@@ -359,14 +372,53 @@ suite('Report actions', () => {
         assert.deepStrictEqual(JSON.parse(JSON.stringify({
             entries: restored.entries,
             periodStart: restored.periodStart,
+            periodEnd: restored.periodEnd,
             hourlyRate: restored.hourlyRate,
             holidays: restored.holidays,
         })), saved);
         assert.deepStrictEqual(JSON.parse(JSON.stringify(restored.entries[entry.date].map(({ date, task, timeIn, timeOut }) => ({ date, task, timeIn, timeOut })))), [entry, secondEntry]);
         assert.strictEqual(restored.periodStart, '2026-11-21');
+        assert.strictEqual(restored.periodEnd, '2026-12-05');
         assert.strictEqual(restored.hourlyRate, 42.5);
         assert.deepStrictEqual(JSON.parse(JSON.stringify(restored.holidays)), [holiday]);
         await second.deactivate();
+    });
+    test('migrates old periods and rejects invalid or stale range updates', async () => {
+        const file = path.join(directory, 'timesheet.json');
+        await (0, promises_1.writeFile)(file, JSON.stringify({ entries: {}, periodStart: '2024-01-31', hourlyRate: null }));
+        const result = await openTracker(undefined);
+        await result.receiveMessage({ type: 'ready' });
+        assert.strictEqual((result.messages.at(-1)?.data).periodEnd, '2024-02-28');
+        const expectedStart = '2024-01-31';
+        const expectedEnd = '2024-02-28';
+        await result.receiveMessage({ type: 'setPeriod', periodStart: '2024-03-01', periodEnd: '2024-02-29', expectedStart, expectedEnd });
+        assert.match(result.messages.at(-1)?.message ?? '', /on or after/);
+        await result.receiveMessage({ type: 'setPeriod', periodStart: '2024-02-29', periodEnd: '2024-02-29', expectedStart, expectedEnd });
+        await result.receiveMessage({ type: 'setPeriod', periodStart: '2024-02-01', periodEnd: '2024-02-10', expectedStart, expectedEnd });
+        assert.match(result.messages.at(-1)?.message ?? '', /changed in another view/);
+        const saved = JSON.parse(await (0, promises_1.readFile)(file, 'utf8'));
+        assert.strictEqual(saved.periodStart, '2024-02-29');
+        assert.strictEqual(saved.periodEnd, '2024-02-29');
+    });
+    test('rejects invalid stored period ends without rewriting the timesheet', async () => {
+        const file = path.join(directory, 'timesheet.json');
+        const contents = JSON.stringify({ periodStart: '2026-11-21', periodEnd: '2026-11-20' });
+        await (0, promises_1.writeFile)(file, contents);
+        const result = await openTracker(undefined, undefined, { expectLoadFailure: true });
+        assert.match(result.errors[0], /saved period end is invalid/i);
+        assert.strictEqual(await (0, promises_1.readFile)(file, 'utf8'), contents);
+    });
+    test('uses saved custom dates for print and PDF filenames', async () => {
+        await (0, promises_1.writeFile)(path.join(directory, 'timesheet.json'), JSON.stringify({
+            entries: {}, periodStart: '2026-12-31', periodEnd: '2027-01-02', hourlyRate: null,
+        }));
+        const print = await openTracker('print');
+        assert.strictEqual(path.basename(print.opened[0].fsPath), 'timesheet-2026-12-31-to-2027-01-02.pdf');
+        await print.deactivate();
+        const pdf = await openTracker('pdf');
+        assert.strictEqual(path.basename(pdf.getSuggestedSavePath()), 'timesheet-2026-12-31-to-2027-01-02.pdf');
+        assert.deepStrictEqual(pdf.errors, []);
+        await pdf.deactivate();
     });
     test('a failed timesheet write leaves prior data intact and allows retry', async () => {
         const result = await openTracker(undefined);
@@ -575,7 +627,7 @@ suite('Report actions', () => {
         assert.deepStrictEqual(result.errors, []);
         assert.deepStrictEqual(result.information, []);
         assert.strictEqual(result.getSaveDialogs(), 1);
-        assert.deepStrictEqual(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'), JSON.stringify({ entries: {}, periodStart: '2026-10-21', hourlyRate: null, holidays: [] }, null, 2));
+        assert.deepStrictEqual(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'), JSON.stringify({ entries: {}, periodStart: '2026-10-21', periodEnd: '2026-11-20', hourlyRate: null, holidays: [] }, null, 2));
     });
     test('reports export write failures without claiming success', async () => {
         const output = path.join(directory, 'missing', 'timesheet-transfer.json');
@@ -594,8 +646,38 @@ suite('Report actions', () => {
         assert.ok(result.errors.some(message => /active timesheet store/.test(message)));
         const contents = await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8');
         assert.deepStrictEqual(JSON.parse(contents), {
-            entries: {}, periodStart: '2026-10-21', hourlyRate: null, holidays: [],
+            entries: {}, periodStart: '2026-10-21', periodEnd: '2026-11-20', hourlyRate: null, holidays: [],
         });
+    });
+    test('imports Outlook calendar .ics entries without duplicate imports', async () => {
+        const importPath = path.join(directory, 'outlook.ics');
+        await (0, promises_1.writeFile)(importPath, [
+            'BEGIN:VCALENDAR',
+            'BEGIN:VEVENT',
+            'UID:meeting-1',
+            'DTSTART:20261124T090000',
+            'DTEND:20261124T103000',
+            'SUMMARY:Planning review',
+            'END:VEVENT',
+            'END:VCALENDAR',
+        ].join('\r\n'));
+        const result = await openTracker(undefined, undefined, { calendarImportPath: importPath, confirmImport: true });
+        await result.receiveMessage({ type: 'importOutlookCalendar', view: 'entries' });
+        const once = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
+        assert.ok(result.information.some(message => /Outlook Calendar import complete/.test(message)), JSON.stringify({ information: result.information, errors: result.errors }));
+        assert.deepStrictEqual(once.entries['2026-11-24'][0], {
+            id: once.entries['2026-11-24'][0].id,
+            date: '2026-11-24',
+            task: 'Planning review',
+            timeIn: '09:00',
+            timeOut: '10:30',
+        });
+        assert.match(once.entries['2026-11-24'][0].id, /^[a-f0-9]{32}$/);
+        await result.receiveMessage({ type: 'importOutlookCalendar', view: 'entries' });
+        const twice = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
+        assert.strictEqual(twice.entries['2026-11-24'].length, 1);
+        assert.ok(result.information.some(message => /1 entries added/.test(message)));
+        assert.ok(result.information.some(message => /0 entries added/.test(message)));
     });
     test('imports transfer data atomically, preserves preferences, and is idempotent', async () => {
         const existingId = 'a'.repeat(32);
