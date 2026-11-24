@@ -194,6 +194,7 @@ suite('Report actions', () => {
 			getSaveDialogs: () => saveDialogs,
 			getSuggestedSavePath: () => suggestedSavePath,
 			commands, intervals, api, context, activityWrites, deactivate: module.exports.deactivate,
+			executedCommands,
 			getPanelCount: () => panelsCreated, getReveals: () => reveals, getWrites: () => writes,
 			failPersistence: () => { failPersistence = true; },
 			advance: (milliseconds: number) => { now += milliseconds; },
