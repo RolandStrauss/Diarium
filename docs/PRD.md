@@ -65,8 +65,8 @@ These observations describe the active working-tree code, not verified release b
   checkpoints, and shutdown settle intervals.
 - **File storage:** Cumulative totals and exact-file exclusions share a versioned extension `globalState`
   record across workspaces. Previous records remain available for recovery.
-- **Views:** Status bar opens the timesheet; File activity and the floating timer use file-tracker snapshots.
-  Exclusions and confirmed reset are available through Command Palette commands.
+- **Views:** The timesheet has Entries, Period report, Public holidays, File activity, and Maintenance tabs.
+  Maintenance routes portable data and file-activity actions through existing commands.
 - **Accessibility:** Timesheet tabs use keyboard arrow, Home, and End navigation. Validation moves focus to
   invalid fields, and tracking states use text. Timesheet and timer views use VS Code theme colors; all webviews
   include forced-colors fallbacks. Time-card motion respects reduced-motion preferences, and standalone print
@@ -261,6 +261,17 @@ Requirements apply to the release target. A baseline observation in section 4 do
 - Confirm export only after the user-selected file is written. On import or export failure, show an actionable
   error and retain the previous durable data. Warn users that task and holiday descriptions can be sensitive.
 
+### FR-10: Maintenance Tab
+
+- Provide a Maintenance tab alongside Entries, Period report, Public holidays, and File activity.
+- Route import/export, pause/resume, exclusions, reset, floating timer, and time-card preview through existing
+  command callbacks. Do not duplicate their validation, confirmation, or persistence logic in the webview.
+- Reflect shared running, paused, excluded, and waiting state in text. Keep reset confirmation and import
+  confirmation in the extension host.
+- Prevent repeated button activation while a maintenance command is running. Validate command identifiers
+  against a fixed allowlist in the extension host.
+- Preserve keyboard tab navigation, forced-colors readability, and report-only printing.
+
 ## 8. Non-Functional Requirements
 
 - **Privacy:** Do not transmit file paths, names, timesheet data, rates, or source contents. Manual timesheet
@@ -301,10 +312,11 @@ These are acceptance targets, not observed measurements or business metrics.
 No adoption, revenue, or productivity target is supported by current evidence. Do not add telemetry solely
 to measure success.
 
-An exploratory 1,000-record probe on Windows `10.0.26100`, Intel Core Ultra 7 265U, and Node `26.13.1`
-measured maxima of 1.78 ms for snapshots and 4.66 ms for card creation plus HTML rendering. It used two
-warm-up iterations and ten measured iterations. This ran outside the VS Code `1.146.0` extension host;
-the release check still requires an in-host measurement.
+An in-host 1,000-record probe ran on Windows 11 Pro build `26300`, Intel Core i7-12700, VS Code `1.145.3`,
+and Node `v24.20.0`. It used two warm-up iterations and ten measured iterations. Maximum snapshot time was
+`0.720 ms`; maximum card creation plus HTML rendering time was `1.144 ms`. The benchmark runs in the VS Code
+extension host only when `RUN_PERFORMANCE_BENCHMARK=1` is set. Raw evidence is in
+[performance evidence](performance-evidence.md).
 
 ## 10. Validation Strategy
 

@@ -59,6 +59,11 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 .view[hidden] { display: none; }
 .report-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; padding: 15px 0 7px; }
 .report-heading h2 { font-size: 16px; margin: 0; }
+.maintenance-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding: 16px 0; }
+.maintenance-card { border: 1px solid var(--line); padding: 14px; }
+.maintenance-card h2 { font-size: 14px; margin: 0 0 6px; }
+.maintenance-card p { color: var(--muted); line-height: 1.5; margin: 0 0 12px; }
+.maintenance-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 #tracked-active-file { overflow-wrap: anywhere; }
 #file-times-table td.file { overflow-wrap: anywhere; }
 #report-table { min-width: 640px; }
@@ -82,7 +87,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 	body { padding: 0; color: #111; background: #fff; font: 8pt Arial, sans-serif; }
 	header { position: static; border: 0; padding: 0; }
 	h1 { font-size: 14pt; margin: 0 0 4mm; color: #111; }
-	.tabs, .screen-only, #entries-view, #holidays-view, #file-times-view, .error, #print-warning { display: none !important; }
+	.tabs, .screen-only, #entries-view, #holidays-view, #file-times-view, #maintenance-view, .error, #print-warning { display: none !important; }
 	#report-view { display: block !important; }
 	.table-wrap { overflow: visible; max-height: none; }
 	.report-heading { padding: 0 0 2mm; }
@@ -107,6 +112,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <button id="report-tab" role="tab" aria-selected="false" aria-controls="report-view" tabindex="-1">Period report</button>
 <button id="holidays-tab" role="tab" aria-selected="false" aria-controls="holidays-view" tabindex="-1">Public holidays</button>
 <button id="file-times-tab" role="tab" aria-selected="false" aria-controls="file-times-view" tabindex="-1">File activity</button>
+<button id="maintenance-tab" role="tab" aria-selected="false" aria-controls="maintenance-view" tabindex="-1">Maintenance</button>
 </nav>
 </header>
 <main>
@@ -157,7 +163,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 </table></div>
 </section>
 <section id="file-times-view" class="view" role="tabpanel" aria-labelledby="file-times-tab" hidden>
-<div class="toolbar"><div><h2>Automatic file tracking</h2><p class="subtle">Time accumulates while VS Code is focused and a local file is active, including idle periods. Totals stay separate from timesheet reports.</p></div><div><button id="floating-timer-button" type="button">Show floating timer</button> <button id="time-card-button" class="primary" type="button">Preview time card</button></div></div>
+<div class="toolbar"><div><h2>Automatic file tracking</h2><p class="subtle">Time accumulates while VS Code is focused and a local file is active, including idle periods. Totals stay separate from timesheet reports.</p></div></div>
 <div class="totals" aria-live="polite">
 <div class="metric"><strong id="tracked-total">0h 00m</strong><span>tracked time</span></div>
 <div class="metric"><strong id="tracked-file-count">0</strong><span>files tracked</span></div>
@@ -189,6 +195,37 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 </table></div>
 <div id="print-summary" class="totals" aria-live="polite"></div>
 </section>
+<section id="maintenance-view" class="view" role="tabpanel" aria-labelledby="maintenance-tab" hidden>
+<div class="toolbar"><div><h2>Maintenance</h2><p class="subtle">Manage portable timesheet data and automatic file activity. Existing confirmation and validation still apply.</p></div></div>
+<div class="maintenance-grid">
+<section class="maintenance-card" aria-labelledby="maintenance-timesheet-heading">
+<h2 id="maintenance-timesheet-heading">Timesheet data</h2>
+<p>Import or export manual entries and public holidays. Export files contain task and holiday text; review them before sharing.</p>
+<div class="maintenance-actions">
+<button id="maintenance-import" type="button">Import data</button>
+<button id="maintenance-export" class="primary" type="button">Export data</button>
+</div>
+</section>
+<section class="maintenance-card" aria-labelledby="maintenance-activity-heading">
+<h2 id="maintenance-activity-heading">File activity</h2>
+<p id="maintenance-tracking-status" role="status">Automatic tracking running</p>
+<div class="maintenance-actions">
+<button id="maintenance-toggle" type="button">Pause file tracking</button>
+<button id="maintenance-exclusions" type="button">Manage exclusions</button>
+<button id="maintenance-reset" type="button">Reset file activity</button>
+</div>
+</section>
+<section class="maintenance-card" aria-labelledby="maintenance-views-heading">
+<h2 id="maintenance-views-heading">Activity views</h2>
+<p>Open the live timer or create a preview from the current file-activity snapshot.</p>
+<div class="maintenance-actions">
+<button id="maintenance-timer" type="button">Show floating timer</button>
+<button id="maintenance-card" type="button">Preview time card</button>
+</div>
+</section>
+</div>
+<div id="maintenance-error" class="error" role="alert" aria-live="assertive"></div>
+</section>
 </main>
 <script nonce="${scriptNonce}">
 const vscode = acquireVsCodeApi();
@@ -196,6 +233,7 @@ const byId = (id) => document.getElementById(id);
 let data = { entries: {}, holidays: [], periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null, paused: false, excluded: false };
 const drafts = {}; const pendingFormEntries = {};
 let periodDraft = null; let rateDraft = null; let renderPending = false; let nextRequestId = 0;
+let maintenanceActionPending = false;
 const dateFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 function esc(value) { return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 function dateObj(value) { return new Date(value + 'T00:00:00Z'); }
@@ -362,6 +400,8 @@ function renderFileTimes() {
   ? 'Current file excluded from automatic tracking'
   : data.paused ? 'Automatic tracking paused'
   : data.activeFile ? 'Automatic tracking running' : 'Waiting for a focused local file';
+  byId('maintenance-tracking-status').textContent = byId('tracking-status').textContent;
+  byId('maintenance-toggle').textContent = data.paused ? 'Resume file tracking' : 'Pause file tracking';
  byId('file-times-body').innerHTML = files.length
   ? files.map(([file, milliseconds]) => '<tr><td class="file">' + esc(file) + '</td><td class="duration">' + durationText(Math.floor(milliseconds / 60000)) + '</td><td>' + (file === data.activeFile ? (data.excluded ? 'Excluded' : data.paused ? 'Paused' : 'Active') : '') + '</td></tr>').join('')
   : '<tr><td colspan="3" class="subtle">No files tracked yet.</td></tr>';
@@ -435,13 +475,13 @@ function render() { renderEntries(); renderSummary(); renderReport(); renderHoli
 function setView(view, focusTab = false) {
  if (view === 'entries' && byId('entries-view').hidden) renderEntries();
  if (view === 'report' && byId('report-view').hidden) renderReport();
- byId('entries-view').hidden = view !== 'entries'; byId('report-view').hidden = view !== 'report'; byId('holidays-view').hidden = view !== 'holidays'; byId('file-times-view').hidden = view !== 'file-times';
- byId('entries-tab').setAttribute('aria-selected', String(view === 'entries')); byId('report-tab').setAttribute('aria-selected', String(view === 'report')); byId('holidays-tab').setAttribute('aria-selected', String(view === 'holidays')); byId('file-times-tab').setAttribute('aria-selected', String(view === 'file-times'));
- const tabs = ['entries', 'report', 'holidays', 'file-times'];
+ byId('entries-view').hidden = view !== 'entries'; byId('report-view').hidden = view !== 'report'; byId('holidays-view').hidden = view !== 'holidays'; byId('file-times-view').hidden = view !== 'file-times'; byId('maintenance-view').hidden = view !== 'maintenance';
+ byId('entries-tab').setAttribute('aria-selected', String(view === 'entries')); byId('report-tab').setAttribute('aria-selected', String(view === 'report')); byId('holidays-tab').setAttribute('aria-selected', String(view === 'holidays')); byId('file-times-tab').setAttribute('aria-selected', String(view === 'file-times')); byId('maintenance-tab').setAttribute('aria-selected', String(view === 'maintenance'));
+ const tabs = ['entries', 'report', 'holidays', 'file-times', 'maintenance'];
  tabs.forEach((name) => byId(name + '-tab').tabIndex = name === view ? 0 : -1);
  if (focusTab) byId(view + '-tab').focus();
 }
-const tabNames = ['entries', 'report', 'holidays', 'file-times'];
+const tabNames = ['entries', 'report', 'holidays', 'file-times', 'maintenance'];
 tabNames.forEach((name, index) => {
  const tab = byId(name + '-tab');
  tab.addEventListener('click', () => setView(name, true));
@@ -456,6 +496,26 @@ tabNames.forEach((name, index) => {
   setView(tabNames[next], true);
  });
 });
+const maintenanceActions = [
+ ['maintenance-import', 'time-tracker.importTimesheet'],
+ ['maintenance-export', 'time-tracker.exportTimesheet'],
+ ['maintenance-toggle', 'time-tracker.toggleTracking'],
+ ['maintenance-exclusions', 'time-tracker.manageExclusions'],
+ ['maintenance-reset', 'time-tracker.resetFileTimes'],
+ ['maintenance-timer', 'time-tracker.showFloatingTimer'],
+ ['maintenance-card', 'time-tracker.openTimeCard']
+];
+const maintenanceButtons = maintenanceActions.map(([id]) => id);
+function setMaintenanceBusy(busy) {
+ maintenanceActionPending = busy;
+ maintenanceButtons.forEach((id) => { byId(id).disabled = busy; });
+}
+maintenanceActions.forEach(([id, command]) => byId(id).addEventListener('click', () => {
+ if (maintenanceActionPending) return;
+ setMaintenanceBusy(true);
+ byId('maintenance-error').textContent = '';
+ vscode.postMessage({ type: 'maintenanceAction', command });
+}));
 byId('holiday-date').value = localDateValue();
 byId('holiday-form').addEventListener('submit', (event) => {
  event.preventDefault();
@@ -514,8 +574,6 @@ byId('print-button').addEventListener('click', () => {
  if (Object.keys(drafts).length || periodDraft || rateDraft) { setError('report-error', 'Save or discard unsaved changes before exporting the report.'); return; }
  vscode.postMessage({ type: 'requestReportAction' });
 });
-byId('time-card-button').addEventListener('click', () => vscode.postMessage({ type: 'openTimeCard' }));
-byId('floating-timer-button').addEventListener('click', () => vscode.postMessage({ type: 'showFloatingTimer' }));
 window.addEventListener('message', (event) => {
  const message = event.data;
  if (message.type === 'holidayAdded') {
@@ -568,6 +626,11 @@ window.addEventListener('message', (event) => {
   else { renderYearSelect(); render(); }
  }
  if (message.type === 'fileTimes') { data.fileTimes = message.data.fileTimes; data.activeFile = message.data.activeFile; data.paused = message.data.paused; data.excluded = message.data.excluded; data.activeEligible = message.data.activeEligible; renderFileTimes(); }
+ if (message.type === 'maintenanceActionComplete') { setMaintenanceBusy(false); }
+ if (message.type === 'maintenanceActionError') {
+  setMaintenanceBusy(false);
+  byId('maintenance-error').textContent = message.message;
+ }
  if (message.type === 'error') {
   if (message.requestId && Object.hasOwn(pendingFormEntries, message.requestId)) {
    delete pendingFormEntries[message.requestId];

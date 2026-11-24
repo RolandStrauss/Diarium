@@ -34,8 +34,10 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const assert = __importStar(require("node:assert"));
+const node_perf_hooks_1 = require("node:perf_hooks");
 const node_zlib_1 = require("node:zlib");
 const floatingTimer_1 = require("../floatingTimer");
+const fileTimeTracker_1 = require("../fileTimeTracker");
 const timeCard_1 = require("../timeCard");
 suite('Time cards', () => {
     const now = new Date('2026-11-13T08:00:00Z');
@@ -128,6 +130,34 @@ suite('Time cards', () => {
         const card = (0, timeCard_1.createTimeCard)({ 'C:\\private\\時間.ts': 60_000 }, now);
         assert.match((0, timeCard_1.renderTimeCardHtml)(card), /時間\.ts/);
         await assert.rejects((0, timeCard_1.renderTimeCardPdf)(card), /Save HTML and print it from your browser/);
+    });
+    test('benchmarks 1,000 file snapshots and cards in the extension host', async function () {
+        if (!process.env.RUN_PERFORMANCE_BENCHMARK) {
+            this.skip();
+        }
+        const files = Object.fromEntries(Array.from({ length: 1_000 }, (_, index) => [`C:\\benchmark\\file-${String(index).padStart(4, '0')}.ts`, 60_000 + index * 1_000]));
+        const tracker = new fileTimeTracker_1.FileTimeTracker(files, async () => { }, () => 0);
+        const snapshotTimes = [];
+        const cardTimes = [];
+        for (let index = 0; index < 2; index++) {
+            const snapshot = tracker.snapshot();
+            (0, timeCard_1.renderTimeCardHtml)((0, timeCard_1.createTimeCard)(snapshot.fileTimes, now));
+        }
+        for (let index = 0; index < 10; index++) {
+            const snapshotStart = node_perf_hooks_1.performance.now();
+            const snapshot = tracker.snapshot();
+            snapshotTimes.push(node_perf_hooks_1.performance.now() - snapshotStart);
+            const cardStart = node_perf_hooks_1.performance.now();
+            (0, timeCard_1.renderTimeCardHtml)((0, timeCard_1.createTimeCard)(snapshot.fileTimes, now));
+            cardTimes.push(node_perf_hooks_1.performance.now() - cardStart);
+        }
+        const snapshotMaximum = Math.max(...snapshotTimes);
+        const cardMaximum = Math.max(...cardTimes);
+        console.log(`Performance benchmark: VS Code extension host, 1,000 files, 2 warm-ups, 10 iterations`);
+        console.log(`Snapshot ms: ${snapshotTimes.map(value => value.toFixed(3)).join(', ')}; maximum ${snapshotMaximum.toFixed(3)} ms`);
+        console.log(`Card ms: ${cardTimes.map(value => value.toFixed(3)).join(', ')}; maximum ${cardMaximum.toFixed(3)} ms`);
+        assert.ok(snapshotMaximum < 200, `Snapshot maximum ${snapshotMaximum.toFixed(3)} ms exceeded 200 ms`);
+        assert.ok(cardMaximum < 200, `Card maximum ${cardMaximum.toFixed(3)} ms exceeded 200 ms`);
     });
 });
 //# sourceMappingURL=timeCard.test.js.map

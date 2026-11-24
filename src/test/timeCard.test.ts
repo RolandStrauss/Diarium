@@ -1,6 +1,8 @@
 import * as assert from 'node:assert';
+import { performance } from 'node:perf_hooks';
 import { inflateSync } from 'node:zlib';
 import { getFloatingTimerHtml } from '../floatingTimer';
+import { FileTimeTracker } from '../fileTimeTracker';
 import { createTimeCard, renderTimeCardHtml, renderTimeCardPdf } from '../timeCard';
 
 suite('Time cards', () => {
@@ -107,5 +109,39 @@ suite('Time cards', () => {
 		const card = createTimeCard({ 'C:\\private\\時間.ts': 60_000 }, now);
 		assert.match(renderTimeCardHtml(card), /時間\.ts/);
 		await assert.rejects(renderTimeCardPdf(card), /Save HTML and print it from your browser/);
+	});
+
+	test('benchmarks 1,000 file snapshots and cards in the extension host', async function () {
+		if (!process.env.RUN_PERFORMANCE_BENCHMARK) {
+			this.skip();
+		}
+
+		const files = Object.fromEntries(Array.from({ length: 1_000 }, (_, index) =>
+			[`C:\\benchmark\\file-${String(index).padStart(4, '0')}.ts`, 60_000 + index * 1_000]));
+		const tracker = new FileTimeTracker(files, async () => {}, () => 0);
+		const snapshotTimes: number[] = [];
+		const cardTimes: number[] = [];
+
+		for (let index = 0; index < 2; index++) {
+			const snapshot = tracker.snapshot();
+			renderTimeCardHtml(createTimeCard(snapshot.fileTimes, now));
+		}
+		for (let index = 0; index < 10; index++) {
+			const snapshotStart = performance.now();
+			const snapshot = tracker.snapshot();
+			snapshotTimes.push(performance.now() - snapshotStart);
+
+			const cardStart = performance.now();
+			renderTimeCardHtml(createTimeCard(snapshot.fileTimes, now));
+			cardTimes.push(performance.now() - cardStart);
+		}
+
+		const snapshotMaximum = Math.max(...snapshotTimes);
+		const cardMaximum = Math.max(...cardTimes);
+		console.log(`Performance benchmark: VS Code extension host, 1,000 files, 2 warm-ups, 10 iterations`);
+		console.log(`Snapshot ms: ${snapshotTimes.map(value => value.toFixed(3)).join(', ')}; maximum ${snapshotMaximum.toFixed(3)} ms`);
+		console.log(`Card ms: ${cardTimes.map(value => value.toFixed(3)).join(', ')}; maximum ${cardMaximum.toFixed(3)} ms`);
+		assert.ok(snapshotMaximum < 200, `Snapshot maximum ${snapshotMaximum.toFixed(3)} ms exceeded 200 ms`);
+		assert.ok(cardMaximum < 200, `Card maximum ${cardMaximum.toFixed(3)} ms exceeded 200 ms`);
 	});
 });

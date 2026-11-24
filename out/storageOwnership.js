@@ -33,10 +33,20 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.StorageInUseError = void 0;
 exports.acquireStorageOwnership = acquireStorageOwnership;
 const node_fs_1 = require("node:fs");
 const node_crypto_1 = require("node:crypto");
 const path = __importStar(require("node:path"));
+class StorageInUseError extends Error {
+    lockFile;
+    constructor(lockFile) {
+        super(`Time Tracker is paused because its storage is in use. Close the other window and reload. ` +
+            `If the owner crashed, close every VS Code window before removing ${lockFile}, then reopen VS Code.`);
+        this.lockFile = lockFile;
+    }
+}
+exports.StorageInUseError = StorageInUseError;
 function acquireStorageOwnership(directory) {
     (0, node_fs_1.mkdirSync)(directory, { recursive: true });
     const lockFile = path.join(directory, 'time-tracker.owner.lock');
@@ -46,8 +56,7 @@ function acquireStorageOwnership(directory) {
     }
     catch (error) {
         if (error.code === 'EEXIST') {
-            throw new Error(`Time Tracker is paused because its storage is in use. Close the other window and reload. ` +
-                `If the owner crashed, close every VS Code window before removing ${lockFile}, then reopen VS Code.`);
+            throw new StorageInUseError(lockFile);
         }
         throw error;
     }

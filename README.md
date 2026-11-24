@@ -30,6 +30,8 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 - Incomplete time pairs are highlighted and excluded from totals. Entries and preferences are saved as JSON in VS Code extension storage and persist across restarts; existing extension-stored data is migrated automatically.
 - The timesheet tabs support keyboard arrow, Home, and End navigation. Validation errors move focus to the affected
   field, and running, paused, excluded, and waiting states are announced as text.
+- **Maintenance** brings timesheet import/export, file-tracking pause/resume, exclusions, reset, floating timer,
+  and time-card preview together. Existing confirmations and Command Palette commands remain available.
 - Timesheet and timer webviews follow VS Code light and dark colors. All webviews include high-contrast fallbacks.
   Time-card motion stops for reduced-motion preferences, and print output uses readable grayscale.
 
@@ -37,17 +39,17 @@ The initial reporting period starts on 21 October 2026. Its end date is calculat
 
 Only one VS Code window can use Time Tracker's shared storage at a time. Other
 windows show an unavailable status and do not track or modify records. Close the
-owning window, then reload another window to use the extension.
+owning window, then choose **Reload Window** in the recovery dialog.
 
-After an unexpected crash, a storage lock may remain. Close all VS Code windows
-and ensure their extension hosts have stopped. Then remove only the lock file
-named in the error message and reopen VS Code. Do not remove the timesheet or
-other storage files.
+After an unexpected crash, a storage lock may remain. Choose **Recovery
+Instructions** to view the steps and copy the lock path. Close all VS Code
+windows and ensure their extension hosts have stopped. Then remove only that
+lock file and reopen VS Code. Do not remove the timesheet or other storage files.
 
 ## Move timesheet data
 
-Use **Time Tracker: Export Timesheet Data** and **Time Tracker: Import Timesheet Data**
-to transfer manual entries and public holidays between VS Code profiles or machines.
+Use **Export data** and **Import data** in **Maintenance**, or the matching Command Palette commands, to transfer
+manual entries and public holidays between VS Code profiles or machines.
 
 - Exports use a versioned UTF-8 JSON file.
 - The file contains manual entries and holidays, including task and holiday text.
@@ -61,7 +63,7 @@ to transfer manual entries and public holidays between VS Code profiles or machi
 ## Time cards
 
 Run **Time Tracker: Preview Time Card** from the Command Palette, or choose
-**Preview time card** in **File activity**.
+**Preview time card** in **Maintenance**.
 
 - Cards summarize all-time automatic file activity across workspaces, not timesheet entries.
   They include idle time while VS Code is focused.
@@ -82,7 +84,7 @@ Existing timesheet reports and tracking data remain unchanged. Exporting does no
 
 ## Floating timer
 
-Run **Time Tracker: Show Floating Timer**, or choose **Show floating timer** in **File activity**.
+Run **Time Tracker: Show Floating Timer**, or choose **Show floating timer** in **Maintenance**.
 
 - The compact panel shows total and current-file activity as `HH:mm:ss`, updated every second.
   It reads the existing tracker; updates do not write storage every second.
@@ -98,9 +100,11 @@ Run **Time Tracker: Show Floating Timer**, or choose **Show floating timer** in 
   The status bar and File activity indicate a manual pause.
 - Manual pause lasts for the current extension session. After restarting VS Code, automatic
   tracking resumes. Stored totals, daily entries, reports, and time cards remain unchanged.
-- **Time Tracker: Manage File Exclusions** includes or excludes individual local file paths.
+- **Manage exclusions** in **Maintenance** or **Time Tracker: Manage File Exclusions** includes or excludes
+  individual local file paths.
   Excluding a file preserves its past activity; exclusions survive restarts and resets.
-- **Time Tracker: Reset File Activity** asks for confirmation before clearing automatic totals
+- **Reset file activity** in **Maintenance** or **Time Tracker: Reset File Activity** asks for confirmation
+  before clearing automatic totals
   across workspaces. It does not remove timesheet entries, exclusions, or exported files.
 
 ## Development

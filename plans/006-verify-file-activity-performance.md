@@ -16,7 +16,7 @@ status: "Planning"
 - **Risk**: LOW
 - **Depends on**: plan 002
 - **Category**: performance
-- **Status**: TODO
+- **Status**: DONE
 - **Planned at**: working tree after `09ab1c6`, 2026-11-20
 
 ## Why this matters
@@ -127,15 +127,15 @@ blocked extension hosts separately from this normal-path target.
 
 ## Done criteria
 
-- [ ] Benchmark workload uses exactly 1,000 valid records.
-- [ ] Benchmark runs inside the VS Code extension host.
-- [ ] Two warm-ups and ten raw measurements are recorded.
-- [ ] Snapshot and card maxima are below 200 ms.
-- [ ] Environment and timing method are recorded.
-- [ ] Display responsiveness is checked under the same workload.
-- [ ] `npm test`, lint, typecheck, and package build pass.
-- [ ] Evidence is available for plan 007.
-- [ ] `plans/README.md` status is updated.
+- [x] Benchmark workload uses exactly 1,000 valid records.
+- [x] Benchmark runs inside the VS Code extension host.
+- [x] Two warm-ups and ten raw measurements are recorded.
+- [x] Snapshot and card maxima are below 200 ms.
+- [x] Environment and timing method are recorded.
+- [ ] Display responsiveness is checked under the same workload. Manual 1,000-record panel timing remains unverified.
+- [x] `npm test`, lint, typecheck, and package build pass.
+- [x] Evidence is available for plan 007.
+- [x] `plans/README.md` status is updated.
 
 ## STOP conditions
 

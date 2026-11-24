@@ -1,6 +1,6 @@
 ---
 title: "Plan 009: Maintenance tab"
-status: "Planning"
+status: "Complete"
 ---
 
 > **Executor instructions**: Run the drift check first. Keep maintenance actions behind the existing tabs.
@@ -17,7 +17,7 @@ status: "Planning"
 - **Risk**: MED
 - **Depends on**: plans 002 and 008
 - **Category**: enhancement
-- **Status**: TODO
+- **Status**: DONE
 - **Planned at**: 2026-11-21
 
 ## Why this matters
@@ -28,7 +28,7 @@ state without mixing maintenance controls into entry editing.
 
 ## Current state
 
-- The Timesheet webview has four tabs: Entries, Period report, Public holidays, and File activity.
+- The Timesheet webview now has five tabs: Entries, Period report, Public holidays, File activity, and Maintenance.
 - Export and import commands already exist for manual entries and holidays.
 - File-tracking maintenance already exists through pause/resume, exclusion, reset, and recovery prompts.
 - Tab rendering and keyboard navigation are implemented in `src/webview.ts`.
@@ -85,7 +85,7 @@ Do not expose raw global-storage internals as a normal maintenance action.
 
 ## Steps
 
-### Step 1: Add the Maintenance tab and panel
+### Step 1: Add the Maintenance tab and panel — DONE
 
 Add `Maintenance` after `File activity` in the tablist and add a matching maintenance panel.
 Preserve the existing roving-tab, arrow, Home, and End behavior.
@@ -93,7 +93,7 @@ Include the tab and maintenance panel in print and forced-colors handling.
 
 **Verify**: Keyboard navigation reaches Maintenance and hides every other panel.
 
-### Step 2: Route buttons through existing commands
+### Step 2: Route buttons through existing commands — DONE
 
 When a maintenance button is selected, send a webview message containing only the existing command identifier.
 The extension host resolves it with `vscode.commands.executeCommand(...)`.
@@ -103,7 +103,7 @@ Keep the shared tracking state visible on the tab. Update the pause/resume label
 
 **Verify**: Each button invokes its existing command and inherits cancellation, failure, and success behavior.
 
-### Step 3: Protect privacy and destructive operations
+### Step 3: Protect privacy and destructive operations — DONE
 
 Label the portable export as manual timesheet data containing entries and holidays.
 Keep reset confirmation and exclusion changes in the existing command callbacks.
@@ -111,7 +111,7 @@ Do not display raw file paths or stored data unless an existing recovery flow do
 
 **Verify**: Maintenance actions never change data before existing confirmation or validation succeeds.
 
-### Step 4: Test and document
+### Step 4: Test and document — DONE
 
 Add focused tests for:
 
@@ -137,15 +137,15 @@ Update `README.md` and the PRD baseline to describe the tab and its relationship
 
 ## Done criteria
 
-- [ ] Maintenance tab appears next to the existing four tabs.
-- [ ] Import and export data buttons use existing command callbacks.
-- [ ] Pause/resume, exclusions, and reset are available through the tab.
-- [ ] Optional timer/card/recovery actions are included only if they reuse existing behavior.
-- [ ] Repeated clicks do not duplicate actions.
-- [ ] Cancellation and destructive-confirmation behavior remain unchanged.
-- [ ] README and PRD match the implemented UI.
-- [ ] Tests, lint, typecheck, and package build pass.
-- [ ] `plans/README.md` status is updated.
+- [x] Maintenance tab appears next to the existing four tabs.
+- [x] Import and export data buttons use existing command callbacks.
+- [x] Pause/resume, exclusions, and reset are available through the tab.
+- [x] Optional timer and card actions reuse existing behavior; raw recovery export remains unavailable.
+- [x] Repeated clicks do not duplicate actions.
+- [x] Cancellation and destructive-confirmation behavior remain unchanged.
+- [x] README and PRD match the implemented UI.
+- [x] Tests, lint, typecheck, and package build pass.
+- [x] `plans/README.md` status is updated.
 
 ## STOP conditions
 

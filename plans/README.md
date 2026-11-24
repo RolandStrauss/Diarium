@@ -12,9 +12,9 @@ Plans 004-009 extend that set from `docs/prd.md` and the current working tree.
 | 003 | Remove unreferenced legacy timer modules | P2 | S | — | DONE |
 | 004 | Verify accessibility and visual modes | P1 | M | 002 | DONE |
 | 005 | Verify extension host and packaged VSIX | P0 | M | 002 | BLOCKED |
-| 006 | Verify in-host file-activity performance | P1 | S | 002 | TODO |
+| 006 | Verify in-host file-activity performance | P1 | S | 002 | DONE |
 | 008 | Export and import timesheet data | P1 | M | 002 | DONE |
-| 009 | Maintenance tab | P1 | M | 002, 008 | TODO |
+| 009 | Maintenance tab | P1 | M | 002, 008 | DONE |
 | 007 | Align release evidence and documentation | P0 | S | 004-006, 008 | TODO |
 
 ## Dependency notes

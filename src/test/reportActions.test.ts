@@ -9,6 +9,7 @@ import type { PublicHoliday, StoredTimeEntry, TimeEntriesByDate, TimeEntry } fro
 interface TestMessage {
 	type: string;
 	format?: string;
+	command?: string;
 	entry?: TimeEntry;
 	id?: string;
 	expected?: TimeEntry | null;
@@ -38,6 +39,7 @@ suite('Report actions', () => {
 			confirmImport?: boolean; skipOpen?: boolean; savePath?: string; importPath?: string;
 		} = {}) {
 		const commands = new Map<string, () => Promise<void>>();
+		const executedCommands: string[] = [];
 		let receiveMessage: ((message: TestMessage) => Promise<void>) | undefined;
 		let html = '';
 		const opened: { fsPath: string }[] = [];
@@ -59,7 +61,10 @@ suite('Report actions', () => {
 		const api = {
 			commands: {
 				registerCommand: (id: string, callback: () => Promise<void>) => { commands.set(id, callback); },
-				executeCommand: async (id: string) => commands.get(id)?.(),
+				executeCommand: async (id: string) => {
+					executedCommands.push(id);
+					return commands.get(id)?.();
+				},
 			},
 			ViewColumn: { One: 1, Beside: 2 },
 			StatusBarAlignment: { Right: 2 },
@@ -170,7 +175,7 @@ suite('Report actions', () => {
 		return { opened, errors, information, messages, saveDialogs, receiveMessage: receiver, statusBarItems,
 			getHtml: () => html, getReceiver: () => receiveMessage!,
 			getSaveDialogs: () => saveDialogs,
-			commands, intervals, api, context, activityWrites, deactivate: module.exports.deactivate,
+			commands, executedCommands, intervals, api, context, activityWrites, deactivate: module.exports.deactivate,
 			getPanelCount: () => panelsCreated, getReveals: () => reveals, getWrites: () => writes,
 			failPersistence: () => { failPersistence = true; },
 			advance: (milliseconds: number) => { now += milliseconds; },
@@ -204,6 +209,31 @@ suite('Report actions', () => {
 		await result.commands.get('time-tracker.hideFloatingTimer')!();
 		await result.commands.get('time-tracker.hideFloatingTimer')!();
 		assert.strictEqual(result.intervals.size, 2);
+	});
+
+	test('routes only allowlisted maintenance actions and suppresses duplicate requests', async () => {
+		const result = await openTracker(undefined, undefined, { cancelSave: true });
+		const commands = [
+			'time-tracker.toggleTracking',
+			'time-tracker.importTimesheet',
+			'time-tracker.exportTimesheet',
+			'time-tracker.manageExclusions',
+			'time-tracker.resetFileTimes',
+			'time-tracker.showFloatingTimer',
+			'time-tracker.openTimeCard',
+		];
+		const toggle = { type: 'maintenanceAction', command: 'time-tracker.toggleTracking' };
+		await Promise.all([result.receiveMessage(toggle), result.receiveMessage(toggle)]);
+		for (const command of commands.filter(value => value !== 'time-tracker.toggleTracking')) {
+			await result.receiveMessage({ type: 'maintenanceAction', command });
+		}
+		assert.deepStrictEqual(result.executedCommands, commands);
+		assert.ok(result.messages.some(item => item.type === 'maintenanceActionComplete'));
+
+		await result.receiveMessage({ type: 'maintenanceAction', command: 'time-tracker.unknown' });
+		assert.deepStrictEqual(result.executedCommands, commands);
+		assert.ok(result.messages.some(item => item.type === 'maintenanceActionError' &&
+			item.message === 'Choose a valid maintenance action.'));
 	});
 
 	test('timer pause preserves partial seconds, survives file and focus changes, and resumes the latest file', async () => {

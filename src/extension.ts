@@ -14,7 +14,7 @@ import { FileTimeTracker, summarizeFileTime } from './fileTimeTracker';
 import { FloatingTimer } from './floatingTimer';
 import { randomBytes } from 'node:crypto';
 import { createTimeCard, renderTimeCardHtml, renderTimeCardPdf, type TimeCard } from './timeCard';
-import { acquireStorageOwnership } from './storageOwnership';
+import { acquireStorageOwnership, StorageInUseError } from './storageOwnership';
 
 const STORAGE_KEY = 'time-tracker.data';
 const STORAGE_FILE = 'timesheet.json';
@@ -25,6 +25,15 @@ const DEFAULT_PERIOD_START = '2026-10-21';
 const TIMESHEET_TRANSFER_KIND = 'time-tracker-timesheet';
 const TIMESHEET_TRANSFER_VERSION = 1;
 const MAX_TIMESHEET_IMPORT_BYTES = 5 * 1024 * 1024;
+const MAINTENANCE_COMMANDS = new Set([
+	'time-tracker.importTimesheet',
+	'time-tracker.exportTimesheet',
+	'time-tracker.toggleTracking',
+	'time-tracker.manageExclusions',
+	'time-tracker.resetFileTimes',
+	'time-tracker.showFloatingTimer',
+	'time-tracker.openTimeCard',
+]);
 
 export interface TrackerState {
 	entries: TimeEntriesByDate;
@@ -305,10 +314,37 @@ async function saveDocument(
 
 export function activate(context: vscode.ExtensionContext): void {
 	let excludedFiles: string[] = [];
-	const showUnavailable = (reason: string, recoveryAvailable = false): void => {
+	const showUnavailable = (reason: string, recoveryAvailable = false, lockFile?: string): void => {
 		const unavailable = (): void => {
 			void (async () => {
 				try {
+					if (lockFile) {
+						const choice = await vscode.window.showErrorMessage(
+							'Time Tracker is paused because another VS Code window may be using its storage.',
+							{
+								modal: true,
+								detail: 'Close the other window, then reload this window. If VS Code crashed, see the recovery instructions.',
+							},
+							'Reload Window', 'Recovery Instructions',
+						);
+						if (choice === 'Reload Window') {
+							await vscode.commands.executeCommand('workbench.action.reloadWindow');
+						} else if (choice === 'Recovery Instructions') {
+							const recovery = await vscode.window.showErrorMessage(
+								'Recover Time Tracker after an unexpected shutdown',
+								{
+									modal: true,
+									detail: `Close all VS Code windows and ensure their extension hosts have stopped. ` +
+										`Then remove only this lock file and reopen VS Code:\n\n${lockFile}`,
+								},
+								'Copy Lock Path',
+							);
+							if (recovery === 'Copy Lock Path') {
+								await vscode.env.clipboard.writeText(lockFile);
+							}
+						}
+						return;
+					}
 					const choice = await vscode.window.showErrorMessage(reason, ...(recoveryAvailable ? ['Export raw data'] : []));
 					if (choice !== 'Export raw data') {
 						return;
@@ -330,7 +366,9 @@ export function activate(context: vscode.ExtensionContext): void {
 					void vscode.window.showInformationMessage(`Raw file activity data saved to ${destination.fsPath}.`);
 				} catch (error) {
 					const detail = error instanceof Error ? error.message : String(error);
-					void vscode.window.showErrorMessage(`Could not export raw file activity data: ${detail}`);
+					void vscode.window.showErrorMessage(lockFile
+						? `Could not complete storage recovery: ${detail}`
+						: `Could not export raw file activity data: ${detail}`);
 				}
 			})();
 		};
@@ -401,7 +439,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				releaseStorageOwnership = undefined;
 			}
 		}
-		showUnavailable(reason, recoveryAvailable);
+		showUnavailable(reason, recoveryAvailable, error instanceof StorageInUseError ? error.lockFile : undefined);
 		return;
 	}
 	const fileTimePanels = new Set<vscode.WebviewPanel>();
@@ -707,6 +745,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			vscode.ViewColumn.One,
 			{ enableScripts: true, retainContextWhenHidden: true },
 		);
+		let maintenanceActionInFlight = false;
 		try {
 			await getState();
 		} catch (error) {
@@ -735,6 +774,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		panel.webview.onDidReceiveMessage(async (message: {
 			type: string; entry?: TimeEntry; id?: string; expected?: StoredTimeEntry | null; date?: string;
 			requestId?: string;
+			command?: string;
 			value?: string; expectedValue?: string | number | null; view?: 'entries' | 'report' | 'holidays';
 			holiday?: PublicHoliday;
 		}) => {
@@ -744,6 +784,24 @@ export function activate(context: vscode.ExtensionContext): void {
 			}
 			try {
 			switch (message.type) {
+				case 'maintenanceAction':
+					if (typeof message.command !== 'string' || !MAINTENANCE_COMMANDS.has(message.command)) {
+						throw new Error('Choose a valid maintenance action.');
+					}
+					if (stopping) {
+						throw new Error('Time Tracker is shutting down.');
+					}
+					if (maintenanceActionInFlight) {
+						break;
+					}
+					maintenanceActionInFlight = true;
+					try {
+						await vscode.commands.executeCommand(message.command);
+						await panel.webview.postMessage({ type: 'maintenanceActionComplete' });
+					} finally {
+						maintenanceActionInFlight = false;
+					}
+					break;
 				case 'showFloatingTimer':
 					floatingTimer.show();
 					break;
@@ -942,6 +1000,10 @@ export function activate(context: vscode.ExtensionContext): void {
 			}
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
+				if (message.type === 'maintenanceAction') {
+					await panel.webview.postMessage({ type: 'maintenanceActionError', message: reason });
+					return;
+				}
 				await panel.webview.postMessage({
 					type: 'error',
 					operation: message.type,
