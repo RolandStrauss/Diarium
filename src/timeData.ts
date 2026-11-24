@@ -65,6 +65,139 @@ export function durationMinutes(entry: TimeEntry): number | undefined {
 	return end - start;
 }
 
+export function sortEntriesByTimeIn<T extends TimeEntry>(entries: T[]): T[] {
+	return [...entries].sort((a, b) => {
+		if (!a.timeIn) {
+			return b.timeIn ? 1 : 0;
+		}
+		if (!b.timeIn) {
+			return -1;
+		}
+		return a.timeIn.localeCompare(b.timeIn);
+	});
+}
+
+export function parseOutlookCalendarIcs(contents: string): TimeEntry[] {
+	if (typeof contents !== 'string' || !contents.trim()) {
+		throw new Error('The Outlook calendar file is empty.');
+	}
+
+	const physicalLines = contents.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+	const lines: string[] = [];
+	for (const line of physicalLines) {
+		if (/^[ \t]/.test(line) && lines.length) {
+			lines[lines.length - 1] += line.slice(1);
+		} else {
+			lines.push(line);
+		}
+	}
+
+	function property(line: string): { name: string; params: string; value: string } {
+		const separator = line.indexOf(':');
+		if (separator < 0) {
+			return { name: '', params: '', value: '' };
+		}
+		const head = line.slice(0, separator);
+		const parts = head.split(';');
+		return { name: (parts.shift() ?? '').toUpperCase(), params: parts.join(';').toUpperCase(), value: line.slice(separator + 1) };
+	}
+
+	function unescape(value: string): string {
+		return value.replace(/\\([nN])/g, '\n')
+			.replace(/\\,/g, ',')
+			.replace(/\\;/g, ';')
+			.replace(/\\\\/g, '\\')
+			.trim();
+	}
+
+	function parseDate(value: string, params: string): { date: string; time: string; allDay: boolean } | undefined {
+		const allDay = params.includes('VALUE=DATE') || /^\d{8}$/.test(value);
+		let year: number;
+		let month: number;
+		let day: number;
+		let hour = 0;
+		let minute = 0;
+
+		if (allDay) {
+			const match = /^(\d{4})(\d{2})(\d{2})$/.exec(value);
+			if (!match) {
+				return undefined;
+			}
+			year = match[1] ? Number(match[1]) : 0;
+			month = Number(match[2]);
+			day = Number(match[3]);
+		} else {
+			const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?Z?$/.exec(value);
+			if (!match) {
+				return undefined;
+			}
+			year = Number(match[1]);
+			month = Number(match[2]);
+			day = Number(match[3]);
+			hour = Number(match[4]);
+			minute = Number(match[5]);
+			if (value.endsWith('Z')) {
+				const utc = new Date(Date.UTC(year, month - 1, day, hour, minute));
+				year = utc.getFullYear();
+				month = utc.getMonth() + 1;
+				day = utc.getDate();
+				hour = utc.getHours();
+				minute = utc.getMinutes();
+			}
+		}
+
+		const date = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+		if (!isValidDate(date)) {
+			return undefined;
+		}
+		return {
+			date,
+			time: allDay ? '' : `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+			allDay,
+		};
+	}
+
+	const entries: TimeEntry[] = [];
+	for (let index = 0; index < lines.length; index++) {
+		if (lines[index].toUpperCase() !== 'BEGIN:VEVENT') {
+			continue;
+		}
+		const eventLines: string[] = [];
+		for (index++; index < lines.length && lines[index].toUpperCase() !== 'END:VEVENT'; index++) {
+			eventLines.push(lines[index]);
+		}
+
+		const parsed = eventLines.map(property);
+		if (parsed.some(item => item.name === 'STATUS' && item.value.trim().toUpperCase() === 'CANCELLED')) {
+			continue;
+		}
+
+		const summary = parsed.find(item => item.name === 'SUMMARY');
+		const start = parsed.find(item => item.name === 'DTSTART');
+		if (!start) {
+			continue;
+		}
+		const startDate = parseDate(start.value.trim(), start.params);
+		if (!startDate) {
+			continue;
+		}
+
+		const end = parsed.find(item => item.name === 'DTEND');
+		const endDate = end ? parseDate(end.value.trim(), end.params) : undefined;
+		const task = summary ? unescape(summary.value) : 'Untitled calendar event';
+		if (!task) {
+			continue;
+		}
+
+		if (startDate.allDay) {
+			entries.push({ date: startDate.date, task, timeIn: '', timeOut: '' });
+		} else if (endDate && !endDate.allDay) {
+			entries.push({ date: startDate.date, task, timeIn: startDate.time, timeOut: endDate.time });
+		}
+	}
+	return entries;
+}
+
 export function addDays(value: string, days: number): string {
 	if (!isValidDate(value) || !Number.isSafeInteger(days)) {
 		throw new RangeError('Enter a valid calendar date and day offset.');

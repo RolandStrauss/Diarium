@@ -34,6 +34,27 @@ function dateLabel(date: string): string {
 }
 
 suite('Timesheet PDF', () => {
+	test('renders exactly the chosen inclusive range across a year boundary', async () => {
+		const entries = {
+			'2026-12-30': [{ date: '2026-12-30', task: 'Before', timeIn: '09:00', timeOut: '10:00' }],
+			'2027-01-02': [{ date: '2027-01-02', task: 'Last day', timeIn: '09:00', timeOut: '11:00' }],
+			'2027-01-03': [{ date: '2027-01-03', task: 'After', timeIn: '09:00', timeOut: '10:00' }],
+		};
+		const text = pdfText(await renderReportPdf({
+			entries, periodStart: '2026-12-31', periodEnd: '2027-01-02', hourlyRate: null,
+		})).map(item => item.text);
+		assert.ok(text.includes('Reporting period: Dec 31, 2026 to Jan 02, 2027'));
+		assert.ok(text.includes('Last day'));
+		assert.ok(!text.includes('Before') && !text.includes('After'));
+		assert.ok(text.includes('Total hours: 2h 00m     Days logged: 1'));
+		const single = pdfText(await renderReportPdf({
+			entries, periodStart: '2027-01-02', periodEnd: '2027-01-02', hourlyRate: null,
+		})).map(item => item.text);
+		assert.ok(single.includes('Last day'));
+		await assert.rejects(renderReportPdf({ entries: {}, periodStart: '2027-01-02', periodEnd: '2027-01-01', hourlyRate: null }), /period end/);
+		await assert.rejects(renderReportPdf({ entries: {}, periodStart: '2027-01-02', periodEnd: '2027-02-30', hourlyRate: null }), /period end/);
+	});
+
 	test('fits every date of supported short and long empty cycles on one landscape A4 page', async () => {
 		for (const start of ['0001-01-01', '2024-02-01', '2024-01-31', '2026-10-21', '2026-12-21', '9999-12-01']) {
 			const pdf = await renderReportPdf({ entries: {}, periodStart: start, hourlyRate: null });
@@ -78,6 +99,7 @@ suite('Timesheet PDF', () => {
 			'Total hours: 3h 45m     Days logged: 2']) {
 			assert.ok(text.some(item => item.text === expected), expected);
 		}
+		assert.ok(text.findIndex(item => item.text === 'Overlapping task') < text.findIndex(item => item.text === 'Weekend work'));
 		assert.strictEqual(text.filter(item => item.text === '3h 45m').length, 1);
 		for (const hourlyRate of [null, 0, 20, 1e21]) {
 			const report = pdfText(await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate }));

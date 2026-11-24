@@ -7,12 +7,13 @@ import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
 import {
 	customPeriodEnd, formatDuration, isValidDate, validateEntry, validateHoliday,
+	parseOutlookCalendarIcs,
 	type PublicHoliday, type StoredTimeEntry, type TimeEntry, type TimeEntriesByDate,
 } from './timeData';
 import { renderReportPdf } from './pdfReport';
 import { FileTimeTracker, summarizeFileTime } from './fileTimeTracker';
 import { FloatingTimer } from './floatingTimer';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createTimeCard, renderTimeCardHtml, renderTimeCardPdf, type TimeCard } from './timeCard';
 import { acquireStorageOwnership, StorageInUseError } from './storageOwnership';
 
@@ -38,6 +39,7 @@ const MAINTENANCE_COMMANDS = new Set([
 export interface TrackerState {
 	entries: TimeEntriesByDate;
 	periodStart: string;
+	periodEnd: string;
 	hourlyRate: number | null;
 	holidays: PublicHoliday[];
 }
@@ -64,6 +66,10 @@ let stopTracking: (() => void) | undefined;
 
 function newEntryId(): string {
 	return randomBytes(16).toString('hex');
+}
+
+function calendarEntryId(entry: TimeEntry): string {
+	return createHash('sha256').update(JSON.stringify([entry.date, entry.task, entry.timeIn, entry.timeOut])).digest('hex').slice(0, 32);
 }
 
 function isEntryId(value: unknown): value is string {
@@ -108,10 +114,16 @@ function parseState(stored: Partial<TrackerState> = {}): TrackerState {
 	if (typeof periodStart !== 'string' || !isValidDate(periodStart)) {
 		throw new Error('The saved period start is invalid. Restore or repair the JSON file before continuing.');
 	}
-	try {
-		customPeriodEnd(periodStart);
-	} catch {
-		throw new Error('The saved period end is outside the supported calendar. Restore or repair the JSON file before continuing.');
+	let periodEnd = stored.periodEnd;
+	if (periodEnd === undefined) {
+		try {
+			periodEnd = customPeriodEnd(periodStart);
+		} catch {
+			throw new Error('The saved period end is outside the supported calendar. Restore or repair the JSON file before continuing.');
+		}
+	}
+	if (typeof periodEnd !== 'string' || !isValidDate(periodEnd) || periodEnd < periodStart) {
+		throw new Error('The saved period end is invalid. Restore or repair the JSON file before continuing.');
 	}
 	const hourlyRate = stored.hourlyRate === undefined ? null : stored.hourlyRate;
 	if (hourlyRate !== null && (typeof hourlyRate !== 'number' || !Number.isFinite(hourlyRate) || hourlyRate < 0)) {
@@ -123,7 +135,7 @@ function parseState(stored: Partial<TrackerState> = {}): TrackerState {
 		new Set(holidays.map(holiday => JSON.stringify([holiday.date, holiday.name]))).size !== holidays.length) {
 		throw new Error('The saved public holidays are invalid. Restore or repair the JSON file before continuing.');
 	}
-	return { entries, periodStart, hourlyRate, holidays };
+	return { entries, periodStart, periodEnd, hourlyRate, holidays };
 }
 
 function copyTransferEntries(entries: TimeEntriesByDate): TimeEntriesByDate {
@@ -777,6 +789,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			command?: string;
 			value?: string; expectedValue?: string | number | null; view?: 'entries' | 'report' | 'holidays';
 			holiday?: PublicHoliday;
+			periodStart?: string; periodEnd?: string; expectedStart?: string; expectedEnd?: string;
 		}) => {
 			if (!message || typeof message !== 'object' || typeof message.type !== 'string') {
 				void vscode.window.showErrorMessage('Invalid Time Tracker message.');
@@ -808,6 +821,77 @@ export function activate(context: vscode.ExtensionContext): void {
 				case 'openTimeCard':
 					await vscode.commands.executeCommand('time-tracker.openTimeCard');
 					break;
+				case 'importOutlookCalendar': {
+					const selection = await vscode.window.showOpenDialog({
+						canSelectFiles: true,
+						canSelectFolders: false,
+						canSelectMany: false,
+						filters: { 'Outlook Calendar': ['ics'], 'All files': ['*'] },
+						openLabel: 'Import Outlook Calendar',
+					});
+					if (!selection?.length) {
+						break;
+					}
+
+					const handle = await open(selection[0].fsPath, 'r');
+					let contents: string;
+					try {
+						const info = await handle.stat();
+						if (!info.isFile()) {
+							throw new Error('Select a regular Outlook calendar .ics file.');
+						}
+						if (info.size > MAX_TIMESHEET_IMPORT_BYTES) {
+							throw new Error(`The calendar file is too large. The limit is ${MAX_TIMESHEET_IMPORT_BYTES} bytes.`);
+						}
+						contents = await handle.readFile({ encoding: 'utf8' });
+					} finally {
+						await handle.close();
+					}
+
+					const imported = parseOutlookCalendarIcs(contents);
+					if (!imported.length) {
+						throw new Error('No timed or all-day calendar entries found in this Outlook .ics file.');
+					}
+					await timesheetWrites;
+					const current = await getState();
+					const existingKeys = new Set(Object.values(current.entries).flat().map(entry =>
+						JSON.stringify([entry.date, entry.task, entry.timeIn, entry.timeOut]),
+					));
+					const candidates = imported.filter(entry =>
+						!existingKeys.has(JSON.stringify([entry.date, entry.task, entry.timeIn, entry.timeOut])),
+					);
+					if (!candidates.length) {
+						void vscode.window.showInformationMessage('Outlook Calendar import complete: 0 entries added.');
+						break;
+					}
+					const answer = await vscode.window.showWarningMessage(
+						`Import ${candidates.length} calendar ${candidates.length === 1 ? 'entry' : 'entries'}?`,
+						{ modal: true },
+						'Import',
+					);
+					if (answer !== 'Import') {
+						break;
+					}
+
+					let added = 0;
+					await changeState(state => {
+						const entries = { ...state.entries };
+						for (const candidate of candidates) {
+							const key = JSON.stringify([candidate.date, candidate.task, candidate.timeIn, candidate.timeOut]);
+							if (Object.values(entries).flat().some(entry =>
+								JSON.stringify([entry.date, entry.task, entry.timeIn, entry.timeOut]) === key,
+							)) {
+								continue;
+							}
+							const stored: StoredTimeEntry = { ...candidate, id: calendarEntryId(candidate) };
+							entries[candidate.date] = [...(entries[candidate.date] ?? []), stored];
+							added++;
+						}
+						return added ? { ...state, entries } : state;
+					});
+					void vscode.window.showInformationMessage(`Outlook Calendar import complete: ${added} entries added.`);
+					break;
+				}
 				case 'ready':
 					await postState();
 					break;
@@ -928,16 +1012,21 @@ export function activate(context: vscode.ExtensionContext): void {
 						return { ...state, entries };
 					});
 					break;
-				case 'setPeriodStart':
-					if (typeof message.value !== 'string' || !isValidDate(message.value)) {
+				case 'setPeriod':
+					if (typeof message.periodStart !== 'string' || !isValidDate(message.periodStart)) {
 						throw new Error('Enter a valid period start date.');
 					}
-					customPeriodEnd(message.value);
+					if (typeof message.periodEnd !== 'string' || !isValidDate(message.periodEnd)) {
+						throw new Error('Enter a valid period end date.');
+					}
+					if (message.periodEnd < message.periodStart) {
+						throw new Error('Period end must be on or after period start.');
+					}
 					await changeState(state => {
-						if (state.periodStart !== message.expectedValue) {
-							throw new Error('The period start changed in another view. Reload it before editing again.');
+						if (state.periodStart !== message.expectedStart || state.periodEnd !== message.expectedEnd) {
+							throw new Error('The reporting period changed in another view. Reload it before editing again.');
 						}
-						return { ...state, periodStart: message.value! };
+						return { ...state, periodStart: message.periodStart!, periodEnd: message.periodEnd! };
 					});
 					break;
 				case 'setHourlyRate': {
@@ -970,7 +1059,7 @@ export function activate(context: vscode.ExtensionContext): void {
 							const directory = path.join(context.globalStorageUri.fsPath, 'print-reports');
 							await mkdir(directory, { recursive: true });
 							const printDirectory = await mkdtemp(path.join(directory, 'report-'));
-							const filename = `timesheet-${state.periodStart}-to-${customPeriodEnd(state.periodStart)}.pdf`;
+							const filename = `timesheet-${state.periodStart}-to-${state.periodEnd}.pdf`;
 							const filePath = path.join(printDirectory, filename);
 							await writeFile(filePath, pdf);
 							if (!await vscode.env.openExternal(vscode.Uri.file(filePath))) {
@@ -984,7 +1073,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						break;
 					}
 					if (action?.value === 'pdf') {
-						const filename = `timesheet-${state.periodStart}-to-${customPeriodEnd(state.periodStart)}.pdf`;
+						const filename = `timesheet-${state.periodStart}-to-${state.periodEnd}.pdf`;
 						try {
 							const filePath = await saveDocument(filename, 'pdf', () => renderReportPdf(state));
 							if (filePath) {
@@ -1009,7 +1098,7 @@ export function activate(context: vscode.ExtensionContext): void {
 					operation: message.type,
 					id: message.id,
 					requestId: message.requestId,
-					view: message.view ?? (message.type === 'setPeriodStart' || message.type === 'setHourlyRate' ? 'report' : 'entries'),
+					view: message.view ?? (message.type === 'setPeriod' || message.type === 'setHourlyRate' ? 'report' : 'entries'),
 					message: reason,
 				});
 			}

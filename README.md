@@ -23,7 +23,11 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 - Use **Public holidays** to add or remove named holidays on specific dates. Multiple holidays can share a date.
   Holidays appear in entries and period reports, including exported PDFs, but do not add hours or affect estimates.
   Dates do not repeat automatically. PDF holiday names, like tasks, must use printable ASCII.
-- Open **Period report** to edit the 21st-to-20th reporting cycle and configure an optional hourly rate. **Print report** opens a landscape A4 PDF in your default PDF viewer; use the viewer's **Print** command to print it. A print copy is kept in extension storage without prompting for a save location. **Save as PDF** lets you choose where to save the report.
+- Open **Period report** to choose inclusive start and end dates and configure an optional hourly rate.
+  Save the period draft to apply it to the display, printed report, and PDF.
+  **Print report** opens a landscape A4 PDF in your default PDF viewer; use the viewer's **Print** command to print it.
+  A print copy is kept in extension storage without prompting for a save location.
+  **Save as PDF** lets you choose where to save the report.
 - The hourly rate and estimated value stay on screen and are omitted from printed and PDF reports.
 - Timesheet PDFs use multiple landscape A4 pages when needed. Tasks support printable ASCII only; unsupported
   characters are reported instead of truncating or corrupting the report.
@@ -35,7 +39,8 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 - Timesheet and timer webviews follow VS Code light and dark colors. All webviews include high-contrast fallbacks.
   Time-card motion stops for reduced-motion preferences, and print output uses readable grayscale.
 
-The initial reporting period starts on 21 October 2026. Its end date is calculated automatically. The hourly estimate is informational and does not represent payroll or an invoice.
+The initial reporting period is 21 October to 20 November 2026. Existing periods retain their previously
+calculated end date. The hourly estimate is informational and does not represent payroll or an invoice.
 
 Only one VS Code window can use Time Tracker's shared storage at a time. Other
 windows show an unavailable status and do not track or modify records. Close the

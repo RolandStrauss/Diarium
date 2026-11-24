@@ -1,12 +1,14 @@
 import PDFDocument from 'pdfkit';
 import {
 	addDays, customPeriodEnd, durationMinutes, formatDuration, isValidDate, validateEntry,
+	sortEntriesByTimeIn,
 	type PublicHoliday, type ReportEntriesByDate, type TimeEntry,
 } from './timeData';
 
 export interface ReportData {
 	entries: ReportEntriesByDate;
 	periodStart: string;
+	periodEnd?: string;
 	hourlyRate: number | null;
 	holidays?: PublicHoliday[];
 }
@@ -30,7 +32,7 @@ function displayDay(value: string): string {
 }
 
 function entriesForDate(entries: ReportEntriesByDate, date: string): TimeEntry[] {
-	return entries[date] ?? [];
+	return sortEntriesByTimeIn(entries[date] ?? []);
 }
 
 export function renderReportPdf(data: ReportData): Promise<Buffer> {
@@ -43,12 +45,12 @@ export function renderReportPdf(data: ReportData): Promise<Buffer> {
 		}
 		let end: string;
 		try {
-			end = customPeriodEnd(data.periodStart);
+			end = data.periodEnd === undefined ? customPeriodEnd(data.periodStart) : data.periodEnd;
 		} catch {
 			throw new Error('Cannot generate PDF: period end is outside the supported calendar.');
 		}
 		if (!isValidDate(end) || end < data.periodStart) {
-			throw new Error('Cannot generate PDF: period end is outside the supported calendar.');
+			throw new Error('Cannot generate PDF: invalid period end or period end precedes period start.');
 		}
 
 		const document = new PDFDocument({
