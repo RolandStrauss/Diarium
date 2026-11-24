@@ -68,6 +68,15 @@ suite('Manual timesheet', () => {
         assert.strictEqual((0, timeData_1.validateEntry)({ ...entry, timeOut: '24:00' }), 'Time Out must use 24-hour HH:mm format.');
         assert.strictEqual((0, timeData_1.validateEntry)({ ...entry, timeIn: '', timeOut: '' }), undefined);
     });
+    test('sorts entries by ascending Time In with blank times last', () => {
+        const entries = [
+            { date: '2026-11-01', task: 'Blank', timeIn: '', timeOut: '' },
+            { date: '2026-11-01', task: 'Later', timeIn: '10:30', timeOut: '11:30' },
+            { date: '2026-11-01', task: 'Earlier', timeIn: '08:15', timeOut: '09:15' },
+        ];
+        assert.deepStrictEqual((0, timeData_1.sortEntriesByTimeIn)(entries).map(entry => entry.task), ['Earlier', 'Later', 'Blank']);
+        assert.deepStrictEqual(entries.map(entry => entry.task), ['Blank', 'Later', 'Earlier']);
+    });
     class Element {
         id;
         value = '';
@@ -151,8 +160,8 @@ suite('Manual timesheet', () => {
         const ui = frontend();
         const entries = {
             '2024-02-29': [
-                { id: 'design-1', date: '2024-02-29', task: 'Design', timeIn: '23:00', timeOut: '01:00' },
                 { id: 'design-2', date: '2024-02-29', task: 'Design review', timeIn: '23:30', timeOut: '01:30' },
+                { id: 'design-1', date: '2024-02-29', task: 'Design', timeIn: '23:00', timeOut: '01:00' },
             ],
             '2026-01-01': [{ id: 'incomplete', date: '2026-01-01', task: 'design review', timeIn: '09:00', timeOut: '' }],
             '2026-02-01': [{ id: 'other', date: '2026-02-01', task: 'Other', timeIn: '10:00', timeOut: '10:00' }],
@@ -180,6 +189,9 @@ suite('Manual timesheet', () => {
         ui.element('year-select').dispatch('change');
         assert.strictEqual(ui.element('row-count').textContent, '366 dates shown');
         assert.match(ui.element('entries-body').innerHTML, /2024-02-29/);
+        const earlierIndex = ui.element('entries-body').innerHTML.indexOf('value="Design"');
+        const laterIndex = ui.element('entries-body').innerHTML.indexOf('value="Design review"');
+        assert.ok(earlierIndex >= 0 && laterIndex >= 0 && earlierIndex < laterIndex);
     });
     test('sends expected preferences and retains draft through concurrent state updates', () => {
         const ui = frontend();

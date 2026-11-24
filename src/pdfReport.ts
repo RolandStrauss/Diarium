@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import {
 	addDays, customPeriodEnd, durationMinutes, formatDuration, isValidDate, validateEntry,
+	sortEntriesByTimeIn,
 	type PublicHoliday, type ReportEntriesByDate, type TimeEntry,
 } from './timeData';
 
@@ -30,7 +31,7 @@ function displayDay(value: string): string {
 }
 
 function entriesForDate(entries: ReportEntriesByDate, date: string): TimeEntry[] {
-	return entries[date] ?? [];
+	return sortEntriesByTimeIn(entries[date] ?? []);
 }
 
 export function renderReportPdf(data: ReportData): Promise<Buffer> {

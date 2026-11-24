@@ -224,7 +224,12 @@ function durationText(value) { return Math.floor(value / 60) + 'h ' + String(val
 function setError(id, message) { byId(id).textContent = message || ''; }
 function entriesFor(date) {
  const value = data.entries[date];
- return Array.isArray(value) ? value : value ? [value] : [];
+ const entries = Array.isArray(value) ? value : value ? [value] : [];
+ return [...entries].sort((a, b) => {
+  if (!a.timeIn) return b.timeIn ? 1 : 0;
+  if (!b.timeIn) return -1;
+  return a.timeIn.localeCompare(b.timeIn);
+ });
 }
 function holidaysFor(date) { return data.holidays.filter((holiday) => holiday.date === date); }
 function holidayLabels(date) { return holidaysFor(date).map((holiday) => '<span class="holiday-label">Public holiday: ' + esc(holiday.name) + '</span>').join(''); }

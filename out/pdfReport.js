@@ -23,7 +23,7 @@ function displayDay(value) {
     return date.getUTCDay() === 0 || date.getUTCDay() === 6 ? `${day} (Weekend)` : day;
 }
 function entriesForDate(entries, date) {
-    return entries[date] ?? [];
+    return (0, timeData_1.sortEntriesByTimeIn)(entries[date] ?? []);
 }
 function renderReportPdf(data) {
     return new Promise((resolve, reject) => {

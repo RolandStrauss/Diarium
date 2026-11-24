@@ -65,6 +65,18 @@ export function durationMinutes(entry: TimeEntry): number | undefined {
 	return end - start;
 }
 
+export function sortEntriesByTimeIn<T extends TimeEntry>(entries: T[]): T[] {
+	return [...entries].sort((a, b) => {
+		if (!a.timeIn) {
+			return b.timeIn ? 1 : 0;
+		}
+		if (!b.timeIn) {
+			return -1;
+		}
+		return a.timeIn.localeCompare(b.timeIn);
+	});
+}
+
 export function addDays(value: string, days: number): string {
 	if (!isValidDate(value) || !Number.isSafeInteger(days)) {
 		throw new RangeError('Enter a valid calendar date and day offset.');

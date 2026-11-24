@@ -4,6 +4,7 @@ exports.validateHoliday = validateHoliday;
 exports.isValidDate = isValidDate;
 exports.isValidTime = isValidTime;
 exports.durationMinutes = durationMinutes;
+exports.sortEntriesByTimeIn = sortEntriesByTimeIn;
 exports.addDays = addDays;
 exports.customPeriodEnd = customPeriodEnd;
 exports.customPeriodRange = customPeriodRange;
@@ -48,6 +49,17 @@ function durationMinutes(entry) {
         end += 24 * 60;
     }
     return end - start;
+}
+function sortEntriesByTimeIn(entries) {
+    return [...entries].sort((a, b) => {
+        if (!a.timeIn) {
+            return b.timeIn ? 1 : 0;
+        }
+        if (!b.timeIn) {
+            return -1;
+        }
+        return a.timeIn.localeCompare(b.timeIn);
+    });
 }
 function addDays(value, days) {
     if (!isValidDate(value) || !Number.isSafeInteger(days)) {

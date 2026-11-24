@@ -78,6 +78,7 @@ suite('Timesheet PDF', () => {
 			'Total hours: 3h 45m     Days logged: 2']) {
 			assert.ok(text.some(item => item.text === expected), expected);
 		}
+		assert.ok(text.findIndex(item => item.text === 'Overlapping task') < text.findIndex(item => item.text === 'Weekend work'));
 		assert.strictEqual(text.filter(item => item.text === '3h 45m').length, 1);
 		for (const hourlyRate of [null, 0, 20, 1e21]) {
 			const report = pdfText(await renderReportPdf({ entries, periodStart: '2026-10-21', hourlyRate }));
