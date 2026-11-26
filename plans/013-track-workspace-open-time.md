@@ -1,6 +1,6 @@
 ---
 title: "Plan 013: Track workspace open time"
-status: "Planning"
+status: "Done"
 ---
 
 ## Status
@@ -10,7 +10,7 @@ status: "Planning"
 - Risk: MED
 - Depends on: plan 002
 - Category: enhancement
-- Status: TODO
+- Status: DONE
 
 ## Why
 
@@ -66,10 +66,10 @@ these sessions; they do not maintain a second workspace-timing counter.
 
 ## Done criteria
 
-- [ ] Opt-in setting exists and defaults to false.
-- [ ] Workspace open time is accurate and cumulative.
-- [ ] Storage is separate from timesheet and file-activity data.
-- [ ] Shutdown and checkpoint behavior are tested.
+- [x] Opt-in setting exists and defaults to false.
+- [x] Workspace open time is accurate and cumulative.
+- [x] Storage is separate from timesheet and file-activity data.
+- [x] Shutdown and checkpoint behavior are tested.
 
 ## STOP conditions
 

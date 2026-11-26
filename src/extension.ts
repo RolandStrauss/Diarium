@@ -16,12 +16,19 @@ import { FloatingTimer } from './floatingTimer';
 import { createHash, randomBytes } from 'node:crypto';
 import { createTimeCard, renderTimeCardHtml, renderTimeCardPdf, type TimeCard } from './timeCard';
 import { acquireStorageOwnership, StorageInUseError } from './storageOwnership';
+import {
+	createWorkspaceIdentity,
+	summarizeWorkspaceUsage,
+	WorkspaceActivityTracker,
+	type WorkspaceIdentity,
+} from './workspaceActivity';
 
 const STORAGE_KEY = 'time-tracker.data';
 const STORAGE_FILE = 'timesheet.json';
 const FILE_TIMES_STORAGE_KEY = 'time-tracker.file-times';
 const FILE_ACTIVITY_STORAGE_KEY = 'time-tracker.file-activity';
 const EXCLUDED_FILES_STORAGE_KEY = 'excludedFiles';
+const WORKSPACE_ACTIVITY_STORAGE_KEY = 'time-tracker.workspace-activity';
 const DEFAULT_PERIOD_START = '2026-10-21';
 const TIMESHEET_TRANSFER_KIND = 'time-tracker-timesheet';
 const TIMESHEET_TRANSFER_VERSION = 1;
@@ -63,6 +70,7 @@ let releaseStorageOwnership: (() => void) | undefined;
 let pendingTimesheetWrites = Promise.resolve();
 let pendingTimesheetLoad: Promise<TrackerState> | undefined;
 let stopTracking: (() => void) | undefined;
+let workspaceActivityTracker: WorkspaceActivityTracker | undefined;
 
 function newEntryId(): string {
 	return randomBytes(16).toString('hex');
@@ -74,6 +82,22 @@ function calendarEntryId(entry: TimeEntry): string {
 
 function isEntryId(value: unknown): value is string {
 	return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+}
+
+function currentWorkspaceIdentity(): WorkspaceIdentity | undefined {
+	const folders = vscode.workspace?.workspaceFolders;
+	if (!folders?.length) {
+		return undefined;
+	}
+	const workspaceName = vscode.workspace.name?.trim();
+	const name = workspaceName || folders[0].name?.trim() || 'Workspace';
+	const canonical = JSON.stringify([
+		workspaceName ?? '',
+		folders.map(folder => folder.uri.scheme === 'file'
+			? `file:${folder.uri.fsPath}`
+			: `${folder.uri.scheme}:${folder.uri.path}`),
+	]);
+	return createWorkspaceIdentity(canonical, name);
 }
 
 function parseState(stored: Partial<TrackerState> = {}): TrackerState {
@@ -326,6 +350,7 @@ async function saveDocument(
 
 export function activate(context: vscode.ExtensionContext): void {
 	let excludedFiles: string[] = [];
+	let workspaceActivityUnavailable = false;
 	const showUnavailable = (reason: string, recoveryAvailable = false, lockFile?: string): void => {
 		const unavailable = (): void => {
 			void (async () => {
@@ -372,6 +397,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						fileActivity: context.globalState.get<unknown>(FILE_ACTIVITY_STORAGE_KEY),
 						fileTimes: context.globalState.get<unknown>(FILE_TIMES_STORAGE_KEY),
 						excludedFiles: context.globalState.get<unknown>(EXCLUDED_FILES_STORAGE_KEY),
+						workspaceActivity: context.globalState.get<unknown>(WORKSPACE_ACTIVITY_STORAGE_KEY),
 						legacyFileTimers: context.globalState.get<unknown>('fileTimers'),
 					};
 					await writeFile(destination.fsPath, JSON.stringify(data, null, 2), 'utf8');
@@ -432,6 +458,24 @@ export function activate(context: vscode.ExtensionContext): void {
 			undefined,
 			excludedFiles,
 		);
+		try {
+			workspaceActivityTracker = new WorkspaceActivityTracker(
+				context.globalState.get<unknown>(WORKSPACE_ACTIVITY_STORAGE_KEY),
+				async record => context.globalState.update(WORKSPACE_ACTIVITY_STORAGE_KEY, record),
+			);
+		} catch (error) {
+			workspaceActivityTracker = undefined;
+			workspaceActivityUnavailable = true;
+			const reason = error instanceof Error ? error.message : String(error);
+			void vscode.window.showErrorMessage(reason);
+		}
+		const workspaceActivityEnabled = vscode.workspace?.getConfiguration?.('diarium')
+			?.get<boolean>('workspaceActivity.enabled', false) ?? false;
+		if (workspaceActivityTracker) {
+			workspaceActivityTracker.setEnabled(workspaceActivityEnabled);
+			workspaceActivityTracker.setWorkspace(currentWorkspaceIdentity());
+			workspaceActivityTracker.setFocused(vscode.window.state.focused);
+		}
 		if (context.globalState.get<unknown>('fileTimers') !== undefined) {
 			void vscode.window.showWarningMessage(
 				'Older fileTimers data remains separate and was not imported. Back up your VS Code profile and reconcile it before relying on file activity totals.',
@@ -579,6 +623,24 @@ export function activate(context: vscode.ExtensionContext): void {
 	statusBarItem.text = '$(watch) 0h 00m | 0h 00m';
 	statusBarItem.tooltip = 'Total tracked: 0h 00m\nCurrent file: 0h 00m\nClick to open Time Tracker';
 	statusBarItem.show();
+	let workspaceUsageText = workspaceActivityUnavailable
+		? 'Usage unavailable'
+		: workspaceActivityTracker?.isEnabled() ? '' : 'Usage off';
+	const refreshWorkspaceUsage = (): void => {
+		if (workspaceActivityUnavailable || !workspaceActivityTracker) {
+			workspaceUsageText = 'Usage unavailable';
+			return;
+		}
+		if (!workspaceActivityTracker.isEnabled()) {
+			workspaceUsageText = 'Usage off';
+			return;
+		}
+		const usage = summarizeWorkspaceUsage(workspaceActivityTracker.snapshot());
+		const yesterday = formatDuration(Math.floor(usage.yesterdaySeconds / 60));
+		const sevenDay = formatDuration(Math.floor(usage.sevenDaySeconds / 60));
+		workspaceUsageText = `Yesterday ${yesterday} | 7d ${sevenDay}`;
+	};
+	refreshWorkspaceUsage();
 	const showFileTimePersistenceError = (error: unknown): void => {
 		const reason = error instanceof Error ? error.message : String(error);
 		void vscode.window.showErrorMessage(`Could not save automatic file time data: ${reason}`);
@@ -592,8 +654,14 @@ export function activate(context: vscode.ExtensionContext): void {
 			? `Current file (${path.basename(snapshot.activeFile)})`
 			: 'Current file';
 		statusBarItem.text = `${snapshot.paused ? '$(debug-pause)' : '$(watch)'} ${totalTime} | ${currentTime}` +
-			(snapshot.excluded ? ' Excluded' : !snapshot.activeFile ? ' Waiting' : '');
-		statusBarItem.tooltip = `Total tracked: ${totalTime}\n${currentFileLabel}: ${currentTime}\n${snapshot.paused ? 'Automatic tracking paused\n' : snapshot.excluded ? 'Current file excluded\n' : ''}Click to open Time Tracker`;
+			(snapshot.excluded ? ' Excluded' : !snapshot.activeFile ? ' Waiting' : '') +
+			(workspaceUsageText ? ` | ${workspaceUsageText}` : '');
+		const workspaceTrackingState = workspaceActivityUnavailable
+			? 'Workspace usage unavailable'
+			: workspaceActivityTracker?.isEnabled()
+				? `Workspace tracking on, ${vscode.window.state.focused ? 'focused' : 'unfocused'}`
+				: 'Workspace tracking off';
+		statusBarItem.tooltip = `Total tracked: ${totalTime}\n${currentFileLabel}: ${currentTime}\n${snapshot.paused ? 'Automatic tracking paused\n' : snapshot.excluded ? 'Current file excluded\n' : ''}${workspaceTrackingState}\nClick to open Time Tracker`;
 		floatingTimer.update();
 		for (const panel of fileTimePanels) {
 			void panel.webview.postMessage({ type: 'fileTimes', data: snapshot });
@@ -688,16 +756,48 @@ export function activate(context: vscode.ExtensionContext): void {
 	trackActiveFile();
 
 	const activeEditorListener = vscode.window.onDidChangeActiveTextEditor(trackActiveFile);
-	const windowStateListener = vscode.window.onDidChangeWindowState(trackActiveFile);
+	const windowStateListener = vscode.window.onDidChangeWindowState(() => {
+		trackActiveFile();
+		workspaceActivityTracker?.setFocused(vscode.window.state.focused);
+		refreshWorkspaceUsage();
+	});
+	const workspaceFoldersListener = vscode.workspace?.onDidChangeWorkspaceFolders?.(() => {
+		workspaceActivityTracker?.setWorkspace(currentWorkspaceIdentity());
+		refreshWorkspaceUsage();
+	}) ?? { dispose: () => {} };
+	const workspaceConfigurationListener = vscode.workspace?.onDidChangeConfiguration?.(event => {
+		if (!event.affectsConfiguration('diarium.workspaceActivity.enabled')) {
+			return;
+		}
+		const enabled = vscode.workspace.getConfiguration('diarium')
+			.get<boolean>('workspaceActivity.enabled', false);
+		workspaceActivityTracker?.setEnabled(enabled);
+		workspaceActivityTracker?.setWorkspace(currentWorkspaceIdentity());
+		workspaceActivityTracker?.setFocused(vscode.window.state.focused);
+		refreshWorkspaceUsage();
+	}) ?? { dispose: () => {} };
 	const fileTimeInterval = setInterval(() => {
 		if (!stopping) {
 			void updateTracking(tracker.checkpoint());
+		}
+	}, 60_000);
+	const workspaceActivityInterval = setInterval(() => {
+		if (!stopping) {
+			const checkpoint = workspaceActivityTracker?.checkpoint();
+			void checkpoint?.then(() => {
+				refreshWorkspaceUsage();
+				postFileTimes();
+			}).catch(error => {
+				const reason = error instanceof Error ? error.message : String(error);
+				void vscode.window.showErrorMessage(`Could not save workspace activity: ${reason}`);
+			});
 		}
 	}, 60_000);
 	const displayInterval = setInterval(postFileTimes, 1000);
 	stopTracking = () => {
 		stopping = true;
 		clearInterval(fileTimeInterval);
+		clearInterval(workspaceActivityInterval);
 		clearInterval(displayInterval);
 	};
 
@@ -1123,7 +1223,10 @@ export function activate(context: vscode.ExtensionContext): void {
 		statusBarItem,
 		activeEditorListener,
 		windowStateListener,
+		workspaceFoldersListener,
+		workspaceConfigurationListener,
 		{ dispose: () => clearInterval(fileTimeInterval) },
+		{ dispose: () => clearInterval(workspaceActivityInterval) },
 		{ dispose: () => clearInterval(displayInterval) },
 	);
 }
@@ -1133,6 +1236,7 @@ export async function deactivate(): Promise<void> {
 	try {
 		const results = await Promise.allSettled([
 			fileTimeTracker?.setActiveFile(undefined),
+			workspaceActivityTracker?.shutdown(),
 			pendingTimesheetWrites,
 			pendingTimesheetLoad,
 		]);
@@ -1142,6 +1246,7 @@ export async function deactivate(): Promise<void> {
 		}
 	} finally {
 		fileTimeTracker = undefined;
+		workspaceActivityTracker = undefined;
 		stopTracking = undefined;
 		releaseStorageOwnership?.();
 		releaseStorageOwnership = undefined;

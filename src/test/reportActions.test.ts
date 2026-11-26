@@ -219,7 +219,7 @@ suite('Report actions', () => {
 		assert.strictEqual(result.getPanelCount(), 1);
 		assert.strictEqual(result.getReveals(), 1);
 		await result.receiveMessage({ type: 'hide' });
-		assert.strictEqual(result.intervals.size, 2, 'The display refresh and minute checkpoint remain after hiding');
+		assert.strictEqual(result.intervals.size, 3, 'The display refresh, file checkpoint, and workspace checkpoint remain after hiding');
 		result.advance(2000);
 		await result.commands.get('time-tracker.showFloatingTimer')!();
 		await result.getReceiver()({ type: 'ready' });
@@ -227,7 +227,7 @@ suite('Report actions', () => {
 		assert.strictEqual(result.messages.at(-1)?.currentTime, '01:00:03', 'Hiding must not pause tracking');
 		await result.commands.get('time-tracker.hideFloatingTimer')!();
 		await result.commands.get('time-tracker.hideFloatingTimer')!();
-		assert.strictEqual(result.intervals.size, 2);
+		assert.strictEqual(result.intervals.size, 3);
 	});
 
 	test('routes only allowlisted maintenance actions and suppresses duplicate requests', async () => {
@@ -283,7 +283,7 @@ suite('Report actions', () => {
 		for (const disposable of result.context.subscriptions as { dispose?: () => void }[]) {
 			disposable?.dispose?.();
 		}
-		assert.strictEqual(result.intervals.size, 0, 'Extension disposal clears both intervals');
+		assert.strictEqual(result.intervals.size, 0, 'Extension disposal clears all intervals');
 	});
 
 	test('pause write failures notify the user while keeping the timer paused', async () => {
@@ -333,9 +333,10 @@ suite('Report actions', () => {
 		const result = await openTracker(undefined);
 		const [statusBarItem] = result.statusBarItems;
 		assert.ok(statusBarItem);
-		assert.strictEqual(statusBarItem.text, '$(watch) 1h 30m | 1h 00m');
+		assert.strictEqual(statusBarItem.text, '$(watch) 1h 30m | 1h 00m | Usage off');
 		assert.match(statusBarItem.tooltip, /Total tracked: 1h 30m/);
 		assert.match(statusBarItem.tooltip, /Current file \(first\.ts\): 1h 00m/);
+		assert.match(statusBarItem.tooltip, /Workspace tracking off/);
 		assert.strictEqual(statusBarItem.command, 'time-tracker.openTimesheet');
 	});
 

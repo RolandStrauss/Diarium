@@ -1,6 +1,6 @@
 ---
 title: "Plan 020: Add workspace usage to the Diarium status bar item"
-status: "Planning"
+status: "Done"
 ---
 
 ## Status
@@ -10,7 +10,7 @@ status: "Planning"
 - Risk: LOW
 - Depends on: plan 013
 - Category: enhancement
-- Status: TODO
+- Status: DONE
 
 ## Why
 
@@ -71,12 +71,12 @@ Do not compare date strings lexically. Use validated local calendar dates or a U
 
 ## Done criteria
 
-- [ ] Existing Diarium status item remains the only status item.
-- [ ] Existing file totals remain visible.
-- [ ] Yesterday and previous-seven-day totals use workspace open time.
-- [ ] Unfocused, disabled, and unavailable workspace states are explicit.
-- [ ] Local midnight and DST cases are tested.
-- [ ] Existing file-activity behavior is unchanged apart from added usage text.
+- [x] Existing Diarium status item remains the only status item.
+- [x] Existing file totals remain visible.
+- [x] Yesterday and previous-seven-day totals use workspace open time.
+- [x] Unfocused, disabled, and unavailable workspace states are explicit.
+- [x] Local midnight and DST cases are tested.
+- [x] Existing file-activity behavior is unchanged apart from added usage text.
 
 ## STOP conditions
 

@@ -2,7 +2,7 @@
   "name": "Diarium",
   "displayName": "Diarium",
   "description": "Record work time and export local timesheet reports.",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "publisher": "ferraria",
   "repository": {
     "type": "git",
@@ -20,6 +20,16 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Diarium",
+      "properties": {
+        "diarium.workspaceActivity.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Track focused workspace open time locally."
+        }
+      }
+    },
     "commands": [
       {
         "command": "time-tracker.openTimesheet",
