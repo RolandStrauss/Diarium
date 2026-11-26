@@ -1,7 +1,8 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { mkdir, mkdtemp, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { access, mkdir, mkdtemp, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { getWebviewHtml } from './webview';
@@ -19,6 +20,8 @@ import { acquireStorageOwnership, StorageInUseError } from './storageOwnership';
 import {
 	createWorkspaceIdentity,
 	createRepositoryIdentity,
+	createDebugIdentity,
+	createTaskIdentity,
 	getBranchLabel,
 	resolveLanguageExtension,
 	summarizeWorkspaceUsage,
@@ -27,6 +30,9 @@ import {
 	type WorkspaceIdentity,
 	type LanguageExtensionCandidate,
 	type ResolvedLanguageExtension,
+	type WorkspaceTaskIdentity,
+	type WorkspaceTaskResult,
+	type WorkspaceDebugIdentity,
 } from './workspaceActivity';
 
 const STORAGE_KEY = 'time-tracker.data';
@@ -79,6 +85,8 @@ let stopTracking: (() => void) | undefined;
 let workspaceActivityTracker: WorkspaceActivityTracker | undefined;
 let refreshWorkspaceBranches = (): void => {};
 let stopWorkspaceBranchTracking: (() => void) | undefined;
+let interruptPendingTasks: (() => void) | undefined;
+let interruptPendingDebugSessions: (() => void) | undefined;
 
 interface GitRepository {
 	readonly rootUri: vscode.Uri;
@@ -135,6 +143,14 @@ function currentWorkspaceIdentity(): WorkspaceIdentity | undefined {
 			: `${folder.uri.scheme}:${folder.uri.path}`),
 	]);
 	return createWorkspaceIdentity(canonical, name);
+}
+
+function currentTaskIdentity(task: vscode.Task): WorkspaceTaskIdentity {
+	return createTaskIdentity(task.name, task.source, task.definition.type);
+}
+
+function currentDebugIdentity(session: vscode.DebugSession): WorkspaceDebugIdentity {
+	return createDebugIdentity(session.type, session.name);
 }
 
 function parseState(stored: Partial<TrackerState> = {}): TrackerState {
@@ -352,13 +368,62 @@ async function readState(context: vscode.ExtensionContext): Promise<TrackerState
 	return migratedState;
 }
 
+type DirectorySetting = 'exportDirectory' | 'importDirectory' | 'outlookImportDirectory';
+
+function configuredDirectory(setting: DirectorySetting): string {
+	return vscode.workspace.getConfiguration?.('diarium')?.get<string>(setting, '')?.trim() ?? '';
+}
+
+function resolveConfiguredPath(setting: string): { path: string; usedHostBase: boolean } {
+	const folders = vscode.workspace.workspaceFolders ?? [];
+	if (path.isAbsolute(setting)) {
+		return { path: path.resolve(setting), usedHostBase: false };
+	}
+	const workspaceFolder = folders.length === 1 && folders[0].uri.scheme === 'file'
+		? folders[0].uri.fsPath
+		: homedir();
+	return {
+		path: path.resolve(workspaceFolder, setting),
+		usedHostBase: folders.length !== 1 || folders[0].uri.scheme !== 'file',
+	};
+}
+
+async function resolveConfiguredDirectory(setting: DirectorySetting): Promise<string | undefined> {
+	const configured = configuredDirectory(setting);
+	if (!configured) {
+		return undefined;
+	}
+	const resolved = resolveConfiguredPath(configured);
+	if (resolved.usedHostBase) {
+		void vscode.window.showInformationMessage(
+			`Relative ${setting} has no single local workspace folder; using ${resolved.path}.`,
+		);
+	}
+	try {
+		const info = await stat(resolved.path);
+		if (!info.isDirectory()) {
+			throw new Error('Configured path is not a directory.');
+		}
+		await access(resolved.path, fsConstants.R_OK);
+		return resolved.path;
+	} catch {
+		void vscode.window.showWarningMessage(
+			`Configured ${setting} is unavailable at ${resolved.path}. Choose another folder or update the setting.`,
+		);
+		return undefined;
+	}
+}
+
 async function saveDocument(
 	filename: string,
 	format: 'html' | 'pdf' | 'json',
 	render: () => Promise<Buffer> | Buffer,
 	protectedPath?: string,
 ): Promise<string | undefined> {
-	const baseDirectory = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(homedir());
+	const configured = await resolveConfiguredDirectory('exportDirectory');
+	const baseDirectory = configured
+		? vscode.Uri.file(configured)
+		: vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(homedir());
 	const destination = await vscode.window.showSaveDialog({
 		defaultUri: vscode.Uri.joinPath(baseDirectory, filename),
 		filters: {
@@ -538,7 +603,104 @@ export function activate(context: vscode.ExtensionContext): void {
 	const fileTimePanels = new Set<vscode.WebviewPanel>();
 	let stopping = false;
 	const tracker = fileTimeTracker;
-	const languageExtensionCandidates: LanguageExtensionCandidate[] = vscode.extensions.all.flatMap(extension => {
+	const pendingTasks = new Map<vscode.TaskExecution, {
+		identity: WorkspaceTaskIdentity;
+		workspace: WorkspaceIdentity;
+		startedAtMs: number;
+	}>();
+	const finishTask = (
+		execution: vscode.TaskExecution,
+		result: WorkspaceTaskResult,
+		endedAtMs = Date.now(),
+	): void => {
+		const pending = pendingTasks.get(execution);
+		if (!pending) {
+			return;
+		}
+		pendingTasks.delete(execution);
+		workspaceActivityTracker?.recordTaskExecution(
+			pending.identity,
+			pending.workspace,
+			pending.startedAtMs,
+			endedAtMs,
+			result,
+		);
+	};
+	const taskStartListener = vscode.tasks?.onDidStartTask?.(event => {
+		if (stopping || !workspaceActivityTracker?.isEnabled()) {
+			return;
+		}
+		const workspace = currentWorkspaceIdentity();
+		if (!workspace) {
+			return;
+		}
+		pendingTasks.set(event.execution, {
+			identity: currentTaskIdentity(event.execution.task),
+			workspace,
+			startedAtMs: Date.now(),
+		});
+	}) ?? { dispose: () => {} };
+	const taskEndListener = vscode.tasks?.onDidEndTask?.(event => {
+		finishTask(event.execution, 'completed');
+	}) ?? { dispose: () => {} };
+	const taskProcessEndListener = vscode.tasks?.onDidEndTaskProcess?.(event => {
+		finishTask(event.execution, event.exitCode === undefined
+			? 'terminated'
+			: event.exitCode === 0 ? 'completed' : 'failed');
+	}) ?? { dispose: () => {} };
+	interruptPendingTasks = (): void => {
+		for (const execution of pendingTasks.keys()) {
+			finishTask(execution, 'interrupted');
+		}
+		pendingTasks.clear();
+	};
+	const pendingDebugSessions = new Map<string, {
+		identity: WorkspaceDebugIdentity;
+		workspace: WorkspaceIdentity;
+		startedAtMs: number;
+	}>();
+	const finishDebugSession = (
+		sessionId: string,
+		result: 'completed' | 'interrupted',
+		endedAtMs = Date.now(),
+	): void => {
+		const pending = pendingDebugSessions.get(sessionId);
+		if (!pending) {
+			return;
+		}
+		pendingDebugSessions.delete(sessionId);
+		workspaceActivityTracker?.recordDebugSession(
+			pending.identity,
+			pending.workspace,
+			pending.startedAtMs,
+			endedAtMs,
+			result,
+		);
+	};
+	const debugStartListener = vscode.debug?.onDidStartDebugSession?.(session => {
+		if (stopping || !workspaceActivityTracker?.isEnabled()) {
+			return;
+		}
+		const workspace = currentWorkspaceIdentity();
+		if (!workspace) {
+			return;
+		}
+		pendingDebugSessions.set(session.id, {
+			identity: currentDebugIdentity(session),
+			workspace,
+			startedAtMs: Date.now(),
+		});
+	}) ?? { dispose: () => {} };
+	const debugTerminateListener = vscode.debug?.onDidTerminateDebugSession?.(session => {
+		finishDebugSession(session.id, 'completed');
+	}) ?? { dispose: () => {} };
+	interruptPendingDebugSessions = (): void => {
+		for (const sessionId of pendingDebugSessions.keys()) {
+			finishDebugSession(sessionId, 'interrupted');
+		}
+		pendingDebugSessions.clear();
+	};
+	const languageExtensionCandidates: LanguageExtensionCandidate[] = (vscode.extensions?.all ?? []).flatMap(extension => {
 		const manifest: ExtensionManifest = extension.packageJSON;
 		const languageIds = (manifest.contributes?.languages ?? [])
 			.map(language => language.id)
@@ -613,7 +775,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		},
 	};
 	const configureGitBranchTracking = async (): Promise<void> => {
-		const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+		const gitExtension = vscode.extensions?.getExtension<GitExtension>('vscode.git');
 		if (!gitExtension) {
 			return;
 		}
@@ -743,12 +905,14 @@ export function activate(context: vscode.ExtensionContext): void {
 	});
 	const importTimesheet = vscode.commands.registerCommand('time-tracker.importTimesheet', async () => {
 		try {
+			const defaultDirectory = await resolveConfiguredDirectory('importDirectory');
 			const selection = await vscode.window.showOpenDialog({
 				canSelectFiles: true,
 				canSelectFolders: false,
 				canSelectMany: false,
 				filters: { 'Time Tracker timesheet': ['json'], 'All files': ['*'] },
 				openLabel: 'Import timesheet data',
+				...(defaultDirectory ? { defaultUri: vscode.Uri.file(defaultDirectory) } : {}),
 			});
 			if (!selection?.length) {
 				return;
@@ -1102,12 +1266,15 @@ export function activate(context: vscode.ExtensionContext): void {
 					await vscode.commands.executeCommand('time-tracker.openTimeCard');
 					break;
 				case 'importOutlookCalendar': {
+					const defaultDirectory = await resolveConfiguredDirectory('outlookImportDirectory') ??
+						await resolveConfiguredDirectory('importDirectory');
 					const selection = await vscode.window.showOpenDialog({
 						canSelectFiles: true,
 						canSelectFolders: false,
 						canSelectMany: false,
 						filters: { 'Outlook Calendar': ['ics'], 'All files': ['*'] },
 						openLabel: 'Import Outlook Calendar',
+						...(defaultDirectory ? { defaultUri: vscode.Uri.file(defaultDirectory) } : {}),
 					});
 					if (!selection?.length) {
 						await panel.webview.postMessage({ type: 'maintenanceActionComplete' });
@@ -1408,6 +1575,11 @@ export function activate(context: vscode.ExtensionContext): void {
 		documentChangeListener,
 		documentSaveListener,
 		disposeEditBurstTimers,
+		taskStartListener,
+		taskEndListener,
+		taskProcessEndListener,
+		debugStartListener,
+		debugTerminateListener,
 		{ dispose: () => clearInterval(fileTimeInterval) },
 		{ dispose: () => clearInterval(workspaceActivityInterval) },
 		{ dispose: () => clearInterval(displayInterval) },
@@ -1417,6 +1589,8 @@ export function activate(context: vscode.ExtensionContext): void {
 export async function deactivate(): Promise<void> {
 	stopTracking?.();
 	stopWorkspaceBranchTracking?.();
+	interruptPendingTasks?.();
+	interruptPendingDebugSessions?.();
 	try {
 		const results = await Promise.allSettled([
 			fileTimeTracker?.setActiveFile(undefined),
@@ -1434,6 +1608,8 @@ export async function deactivate(): Promise<void> {
 		stopTracking = undefined;
 		refreshWorkspaceBranches = () => {};
 		stopWorkspaceBranchTracking = undefined;
+		interruptPendingTasks = undefined;
+		interruptPendingDebugSessions = undefined;
 		releaseStorageOwnership?.();
 		releaseStorageOwnership = undefined;
 	}

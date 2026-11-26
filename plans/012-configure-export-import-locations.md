@@ -1,6 +1,6 @@
 ---
 title: "Plan 012: Configure export and import locations"
-status: "Planning"
+status: "Done"
 ---
 
 ## Status
@@ -10,7 +10,7 @@ status: "Planning"
 - Risk: MED
 - Depends on: plan 008
 - Category: enhancement
-- Status: TODO
+- Status: DONE
 
 ## Why
 
@@ -67,10 +67,10 @@ default folder. JSON import uses `diarium.importDirectory`.
 
 ## Done criteria
 
-- [ ] Settings appear in VS Code configuration.
-- [ ] Timesheet JSON export/import and Outlook import use correct defaults.
-- [ ] Invalid paths fall back safely.
-- [ ] Documentation explains scope and privacy.
+- [x] Settings appear in VS Code configuration.
+- [x] Timesheet JSON export/import and Outlook import use correct defaults.
+- [x] Invalid paths fall back safely.
+- [x] Documentation explains scope and privacy.
 
 ## STOP conditions
 

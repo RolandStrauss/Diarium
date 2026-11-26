@@ -1,6 +1,6 @@
 ---
 title: "Plan 017: Track debug sessions"
-status: "Planning"
+status: "Done"
 ---
 
 ## Status
@@ -10,7 +10,7 @@ status: "Planning"
 - Risk: MED
 - Depends on: plan 013
 - Category: enhancement
-- Status: TODO
+- Status: DONE
 
 ## Why
 
@@ -41,9 +41,9 @@ Debug starts indicate focused development effort. Session details must stay out 
 
 ## Done criteria
 
-- [ ] Debug session counts and durations are local.
-- [ ] Sensitive launch data is excluded.
-- [ ] Session lifecycle is tested.
+- [x] Debug session counts and durations are local.
+- [x] Sensitive launch data is excluded.
+- [x] Session lifecycle is tested.
 
 ## STOP conditions
 

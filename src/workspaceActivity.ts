@@ -23,11 +23,44 @@ export interface WorkspaceExtensionActivity {
 	lastSeenAt: string;
 }
 
+export type WorkspaceTaskResult = 'completed' | 'failed' | 'terminated' | 'interrupted';
+
+export interface WorkspaceTaskIdentity {
+	taskKey: string;
+	name: string;
+	source: string;
+	type: string;
+}
+
+export interface WorkspaceTaskActivity extends WorkspaceTaskIdentity {
+	startedAt: string;
+	endedAt: string;
+	seconds: number;
+	result: WorkspaceTaskResult;
+}
+
+export type WorkspaceDebugResult = 'completed' | 'interrupted';
+
+export interface WorkspaceDebugIdentity {
+	debugKey: string;
+	type: string;
+	name: string;
+}
+
+export interface WorkspaceDebugActivity extends WorkspaceDebugIdentity {
+	startedAt: string;
+	endedAt: string;
+	seconds: number;
+	result: WorkspaceDebugResult;
+}
+
 export interface WorkspaceActivityWorkspace {
 	name: string;
 	totalSeconds: number;
 	branches?: Record<string, WorkspaceBranchActivity>;
 	extensions?: Record<string, WorkspaceExtensionActivity>;
+	tasks?: WorkspaceTaskActivity[];
+	debugSessions?: WorkspaceDebugActivity[];
 }
 
 export interface SettledWorkspaceSession {
@@ -68,6 +101,28 @@ function isIsoTimestamp(value: unknown): value is string {
 
 function branchKey(identity: WorkspaceBranchIdentity): string {
 	return createHash('sha256').update(`${identity.repositoryId}\0${identity.name}`).digest('hex').slice(0, 32);
+}
+
+export function createTaskIdentity(name: string, source: string, type: string): WorkspaceTaskIdentity {
+	const taskName = name.trim() || 'Unnamed task';
+	const taskSource = source.trim() || 'Unknown';
+	const taskType = type.trim() || 'Unknown';
+	return {
+		taskKey: createHash('sha256').update(JSON.stringify([taskName, taskSource, taskType])).digest('hex').slice(0, 32),
+		name: taskName,
+		source: taskSource,
+		type: taskType,
+	};
+}
+
+export function createDebugIdentity(type: string, name: string): WorkspaceDebugIdentity {
+	const debugType = type.trim() || 'Unknown';
+	const debugName = name.trim() || 'Unnamed session';
+	return {
+		debugKey: createHash('sha256').update(JSON.stringify([debugType, debugName])).digest('hex').slice(0, 32),
+		type: debugType,
+		name: debugName,
+	};
 }
 
 export interface LanguageExtensionCandidate {
@@ -112,7 +167,9 @@ export function parseWorkspaceActivity(value: unknown): WorkspaceActivityRecord 
 			typeof workspace.totalSeconds !== 'number' ||
 			!Number.isSafeInteger(workspace.totalSeconds) || workspace.totalSeconds < 0 ||
 			(workspace.branches !== undefined && !isPlainObject(workspace.branches)) ||
-			(workspace.extensions !== undefined && !isPlainObject(workspace.extensions))) {
+			(workspace.extensions !== undefined && !isPlainObject(workspace.extensions)) ||
+			(workspace.tasks !== undefined && !Array.isArray(workspace.tasks)) ||
+			(workspace.debugSessions !== undefined && !Array.isArray(workspace.debugSessions))) {
 			throw new Error('Invalid stored workspace activity data. Restore a backup before using workspace tracking.');
 		}
 		const branches: Record<string, WorkspaceBranchActivity> = Object.create(null);
@@ -152,7 +209,56 @@ export function parseWorkspaceActivity(value: unknown): WorkspaceActivityRecord 
 				lastSeenAt: extension.lastSeenAt,
 			};
 		}
-		workspaces[id] = { name: workspace.name, totalSeconds: workspace.totalSeconds, branches, extensions };
+		const tasks: WorkspaceTaskActivity[] = [];
+		for (const task of workspace.tasks ?? []) {
+			if (!isPlainObject(task) ||
+				typeof task.taskKey !== 'string' || !/^[a-f0-9]{32}$/.test(task.taskKey) ||
+				typeof task.name !== 'string' || !task.name ||
+				typeof task.source !== 'string' || !task.source ||
+				typeof task.type !== 'string' || !task.type ||
+				typeof task.startedAt !== 'string' || !isIsoTimestamp(task.startedAt) ||
+				typeof task.endedAt !== 'string' || !isIsoTimestamp(task.endedAt) ||
+				typeof task.seconds !== 'number' ||
+				!Number.isSafeInteger(task.seconds) || task.seconds < 0 ||
+				(task.result !== 'completed' && task.result !== 'failed' &&
+					task.result !== 'terminated' && task.result !== 'interrupted')) {
+				throw new Error('Invalid stored workspace activity data. Restore a backup before using workspace tracking.');
+			}
+			tasks.push({
+				taskKey: task.taskKey,
+				name: task.name,
+				source: task.source,
+				type: task.type,
+				startedAt: task.startedAt,
+				endedAt: task.endedAt,
+				seconds: task.seconds,
+				result: task.result,
+			});
+		}
+		const debugSessions: WorkspaceDebugActivity[] = [];
+		for (const session of workspace.debugSessions ?? []) {
+			if (!isPlainObject(session) ||
+				typeof session.debugKey !== 'string' || !/^[a-f0-9]{32}$/.test(session.debugKey) ||
+				typeof session.type !== 'string' || !session.type ||
+				typeof session.name !== 'string' || !session.name ||
+				typeof session.startedAt !== 'string' || !isIsoTimestamp(session.startedAt) ||
+				typeof session.endedAt !== 'string' || !isIsoTimestamp(session.endedAt) ||
+				typeof session.seconds !== 'number' ||
+				!Number.isSafeInteger(session.seconds) || session.seconds < 0 ||
+				(session.result !== 'completed' && session.result !== 'interrupted')) {
+				throw new Error('Invalid stored workspace activity data. Restore a backup before using workspace tracking.');
+			}
+			debugSessions.push({
+				debugKey: session.debugKey,
+				type: session.type,
+				name: session.name,
+				startedAt: session.startedAt,
+				endedAt: session.endedAt,
+				seconds: session.seconds,
+				result: session.result,
+			});
+		}
+		workspaces[id] = { name: workspace.name, totalSeconds: workspace.totalSeconds, branches, extensions, tasks, debugSessions };
 	}
 
 	const sessions: SettledWorkspaceSession[] = [];
@@ -303,6 +409,8 @@ export class WorkspaceActivityTracker {
 						key,
 						{ ...extension },
 					])),
+					tasks: (workspace.tasks ?? []).map(task => ({ ...task })),
+					debugSessions: (workspace.debugSessions ?? []).map(session => ({ ...session })),
 				},
 			])),
 			sessions: this.record.sessions.map(session => ({ ...session })),
@@ -424,6 +532,72 @@ export class WorkspaceActivityTracker {
 		}
 		workspace.extensions[identity.extensionId] = existing;
 		this.record.workspaces[this.workspaceIdentity.id] = workspace;
+		void this.persistRecord();
+	}
+
+	recordTaskExecution(
+		identity: WorkspaceTaskIdentity,
+		workspaceIdentity: WorkspaceIdentity,
+		startedAtMs: number,
+		endedAtMs: number,
+		result: WorkspaceTaskResult,
+	): void {
+		if (!this.enabled) {
+			return;
+		}
+		const startedAt = new Date(startedAtMs);
+		const endedAt = new Date(endedAtMs);
+		if (!Number.isSafeInteger(startedAtMs) || !Number.isSafeInteger(endedAtMs) ||
+			endedAtMs < startedAtMs || !Number.isFinite(startedAt.getTime()) ||
+			!Number.isFinite(endedAt.getTime())) {
+			throw new Error('Invalid workspace task activity.');
+		}
+		const workspace = Object.hasOwn(this.record.workspaces, workspaceIdentity.id)
+			? this.record.workspaces[workspaceIdentity.id]
+			: { name: workspaceIdentity.name, totalSeconds: 0, tasks: [] };
+		workspace.name = workspaceIdentity.name;
+		workspace.tasks ??= [];
+		workspace.tasks.push({
+			...identity,
+			startedAt: startedAt.toISOString(),
+			endedAt: endedAt.toISOString(),
+			seconds: Math.floor((endedAtMs - startedAtMs) / 1000),
+			result,
+		});
+		this.record.workspaces[workspaceIdentity.id] = workspace;
+		void this.persistRecord();
+	}
+
+	recordDebugSession(
+		identity: WorkspaceDebugIdentity,
+		workspaceIdentity: WorkspaceIdentity,
+		startedAtMs: number,
+		endedAtMs: number,
+		result: WorkspaceDebugResult,
+	): void {
+		if (!this.enabled) {
+			return;
+		}
+		const startedAt = new Date(startedAtMs);
+		const endedAt = new Date(endedAtMs);
+		if (!Number.isSafeInteger(startedAtMs) || !Number.isSafeInteger(endedAtMs) ||
+			endedAtMs < startedAtMs || !Number.isFinite(startedAt.getTime()) ||
+			!Number.isFinite(endedAt.getTime())) {
+			throw new Error('Invalid workspace debug activity.');
+		}
+		const workspace = Object.hasOwn(this.record.workspaces, workspaceIdentity.id)
+			? this.record.workspaces[workspaceIdentity.id]
+			: { name: workspaceIdentity.name, totalSeconds: 0, debugSessions: [] };
+		workspace.name = workspaceIdentity.name;
+		workspace.debugSessions ??= [];
+		workspace.debugSessions.push({
+			...identity,
+			startedAt: startedAt.toISOString(),
+			endedAt: endedAt.toISOString(),
+			seconds: Math.floor((endedAtMs - startedAtMs) / 1000),
+			result,
+		});
+		this.record.workspaces[workspaceIdentity.id] = workspace;
 		void this.persistRecord();
 	}
 

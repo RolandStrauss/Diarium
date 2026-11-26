@@ -65,6 +65,12 @@ manual entries and public holidays between VS Code profiles or machines.
 - A conflicting entry identifier rejects the complete import without replacing local data.
 - Automatic file paths, durations, exclusions, reports, and source contents are not exported or imported.
 - Files larger than 5 MiB and unsupported schema versions are rejected.
+- Configure `diarium.exportDirectory` for a default export folder,
+  `diarium.importDirectory` for timesheet imports, and
+  `diarium.outlookImportDirectory` for Outlook `.ics` imports.
+- Settings accept absolute paths or paths relative to one local workspace folder.
+  Empty or invalid settings keep the normal OS picker. Settings stay local and the extension never creates
+  configured folders.
 
 ## Time cards
 

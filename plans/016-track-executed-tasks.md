@@ -1,6 +1,6 @@
 ---
 title: "Plan 016: Track executed tasks"
-status: "Planning"
+status: "Done"
 ---
 
 ## Status
@@ -10,7 +10,7 @@ status: "Planning"
 - Risk: MED
 - Depends on: plan 013
 - Category: enhancement
-- Status: TODO
+- Status: DONE
 
 ## Why
 
@@ -42,9 +42,9 @@ Task execution is a useful work-context signal. The record must exclude commands
 
 ## Done criteria
 
-- [ ] Task counts and durations are visible in workspace activity.
-- [ ] Sensitive task arguments are never recorded.
-- [ ] Repeated and interrupted tasks are represented correctly.
+- [x] Task counts and durations are visible in workspace activity.
+- [x] Sensitive task arguments are never recorded.
+- [x] Repeated and interrupted tasks are represented correctly.
 
 ## STOP conditions
 

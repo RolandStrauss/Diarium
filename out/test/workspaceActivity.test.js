@@ -218,5 +218,52 @@ suite('Workspace activity', () => {
             displayName: 'Unknown',
         });
     });
+    test('stores repeated task executions without command or output data', () => {
+        const start = new Date(2026, 10, 25, 9, 0).getTime();
+        const tracker = new workspaceActivity_1.WorkspaceActivityTracker(undefined, async () => { }, () => start);
+        const workspace = (0, workspaceActivity_1.createWorkspaceIdentity)('workspace-one', 'Diarium');
+        const task = (0, workspaceActivity_1.createTaskIdentity)('Build', 'npm', 'shell');
+        tracker.setEnabled(true);
+        tracker.setWorkspace(workspace);
+        tracker.recordTaskExecution(task, workspace, start, start + 60_000, 'completed');
+        tracker.recordTaskExecution(task, workspace, start + 120_000, start + 150_000, 'interrupted');
+        const tasks = tracker.snapshot().workspaces[workspace.id].tasks ?? [];
+        assert.strictEqual(tasks.length, 2);
+        assert.deepStrictEqual(tasks.map(item => ({
+            taskKey: item.taskKey,
+            name: item.name,
+            source: item.source,
+            type: item.type,
+            seconds: item.seconds,
+            result: item.result,
+        })), [
+            { taskKey: task.taskKey, name: 'Build', source: 'npm', type: 'shell', seconds: 60, result: 'completed' },
+            { taskKey: task.taskKey, name: 'Build', source: 'npm', type: 'shell', seconds: 30, result: 'interrupted' },
+        ]);
+        assert.ok(tasks.every(item => !Object.hasOwn(item, 'command') && !Object.hasOwn(item, 'output')));
+    });
+    test('stores repeated debug sessions without launch configuration data', () => {
+        const start = new Date(2026, 10, 25, 9, 0).getTime();
+        const tracker = new workspaceActivity_1.WorkspaceActivityTracker(undefined, async () => { }, () => start);
+        const workspace = (0, workspaceActivity_1.createWorkspaceIdentity)('workspace-one', 'Diarium');
+        const debug = (0, workspaceActivity_1.createDebugIdentity)('node', 'API debug');
+        tracker.setEnabled(true);
+        tracker.setWorkspace(workspace);
+        tracker.recordDebugSession(debug, workspace, start, start + 90_000, 'completed');
+        tracker.recordDebugSession(debug, workspace, start + 120_000, start + 180_000, 'interrupted');
+        const sessions = tracker.snapshot().workspaces[workspace.id].debugSessions ?? [];
+        assert.strictEqual(sessions.length, 2);
+        assert.deepStrictEqual(sessions.map(session => ({
+            debugKey: session.debugKey,
+            type: session.type,
+            name: session.name,
+            seconds: session.seconds,
+            result: session.result,
+        })), [
+            { debugKey: debug.debugKey, type: 'node', name: 'API debug', seconds: 90, result: 'completed' },
+            { debugKey: debug.debugKey, type: 'node', name: 'API debug', seconds: 60, result: 'interrupted' },
+        ]);
+        assert.ok(sessions.every(session => !Object.hasOwn(session, 'configuration') && !Object.hasOwn(session, 'arguments')));
+    });
 });
 //# sourceMappingURL=workspaceActivity.test.js.map

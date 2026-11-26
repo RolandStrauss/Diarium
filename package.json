@@ -27,6 +27,21 @@
           "type": "boolean",
           "default": false,
           "description": "Track focused workspace open time locally."
+        },
+        "diarium.exportDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Default folder for timesheet, report, and time-card exports. Use an absolute path or a folder relative to a single local workspace."
+        },
+        "diarium.importDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Default folder for timesheet imports. Use an absolute path or a folder relative to a single local workspace."
+        },
+        "diarium.outlookImportDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Default folder for Outlook calendar imports. Falls back to importDirectory. Use an absolute path or a folder relative to a single local workspace."
         }
       }
     },

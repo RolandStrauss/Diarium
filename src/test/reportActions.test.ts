@@ -41,7 +41,7 @@ suite('Report actions', () => {
 			card?: boolean; timer?: boolean; cancelSave?: boolean; failSave?: boolean;
 			expectLoadFailure?: boolean; chooseExclusion?: boolean; confirmReset?: boolean;
 			confirmImport?: boolean; skipOpen?: boolean; savePath?: string; importPath?: string;
-			calendarImportPath?: string;
+			calendarImportPath?: string; settings?: Record<string, string>; workspaceFolders?: string[];
 		} = {}) {
 		const commands = new Map<string, () => Promise<void>>();
 		const executedCommands: string[] = [];
@@ -50,6 +50,7 @@ suite('Report actions', () => {
 		const opened: { fsPath: string }[] = [];
 		const errors: string[] = [];
 		const information: string[] = [];
+		const warnings: string[] = [];
 		const messages: { type: string; data?: unknown; entry?: StoredTimeEntry; requestId?: string; message?: string; totalTime?: string; currentTime?: string; currentFile?: string; paused?: boolean; status?: string }[] = [];
 		const intervals = new Map<number, { callback: () => void; milliseconds: number }>();
 		let nextInterval = 0;
@@ -63,6 +64,7 @@ suite('Report actions', () => {
 		let focusChanged: (() => void) | undefined;
 		let saveDialogs = 0;
 		let suggestedSavePath = '';
+		let suggestedOpenPath = '';
 		const statusBarItems: { text: string; tooltip: string; command: string; show: () => void; dispose: () => void }[] = [];
 		const api = {
 			commands: {
@@ -78,7 +80,17 @@ suite('Report actions', () => {
 				file: (fsPath: string) => ({ fsPath }),
 				joinPath: (base: { fsPath: string }, name: string) => ({ fsPath: path.join(base.fsPath, name) }),
 			},
-			workspace: { workspaceFolders: undefined },
+			workspace: {
+				workspaceFolders: options.workspaceFolders?.map(fsPath => ({
+					name: path.basename(fsPath),
+					uri: { scheme: 'file', fsPath },
+				})),
+				getConfiguration: () => ({
+					get: <T>(key: string, fallback: T): T => (options.settings?.[key] ?? fallback) as T,
+				}),
+				onDidChangeTextDocument: () => ({ dispose: () => {} }),
+				onDidSaveTextDocument: () => ({ dispose: () => {} }),
+			},
 			env: {
 				openExternal: async (uri: { fsPath: string }) => {
 					opened.push(uri);
@@ -120,12 +132,14 @@ suite('Report actions', () => {
 				onDidChangeWindowState: (callback: () => void) => { focusChanged = callback; return { dispose: () => {} }; },
 				showQuickPick: async (items: { file?: string }[]) => options.chooseExclusion
 					? items[0] : action ? { value: action } : undefined,
-				showWarningMessage: async (message: string) => /Import .* (?:new entries|calendar (?:entry|entries))/.test(message)
-					? (() => {
-						return options.confirmImport ? 'Import' : undefined;
-					})()
-					: options.confirmReset ? 'Reset' : undefined,
-				showOpenDialog: async (dialogOptions?: { filters?: Record<string, string[]> }) => {
+				showWarningMessage: async (message: string) => {
+					warnings.push(message);
+					return /Import .* (?:new entries|calendar (?:entry|entries))/.test(message)
+						? options.confirmImport ? 'Import' : undefined
+						: options.confirmReset ? 'Reset' : undefined;
+				},
+				showOpenDialog: async (dialogOptions?: { filters?: Record<string, string[]>; defaultUri?: { fsPath: string } }) => {
+					suggestedOpenPath = dialogOptions?.defaultUri?.fsPath ?? '';
 					if (options.calendarImportPath) {
 						return [{ fsPath: options.calendarImportPath }];
 					}
@@ -189,10 +203,11 @@ suite('Report actions', () => {
 			}
 		}
 		const receiver = receiveMessage ?? (async () => { throw new Error('No webview receiver registered'); });
-		return { opened, errors, information, messages, saveDialogs, receiveMessage: receiver, statusBarItems,
+		return { opened, errors, warnings, information, messages, saveDialogs, receiveMessage: receiver, statusBarItems,
 			getHtml: () => html, getReceiver: () => receiveMessage!,
 			getSaveDialogs: () => saveDialogs,
 			getSuggestedSavePath: () => suggestedSavePath,
+			getSuggestedOpenPath: () => suggestedOpenPath,
 			commands, intervals, api, context, activityWrites, deactivate: module.exports.deactivate,
 			executedCommands,
 			getPanelCount: () => panelsCreated, getReveals: () => reveals, getWrites: () => writes,
@@ -672,6 +687,84 @@ suite('Report actions', () => {
 		assert.ok(!Object.hasOwn(transfer, 'excludedFiles'));
 		assert.ok(result.information.some(message => /Timesheet data saved/.test(message)));
 		assert.strictEqual(result.activityWrites.length, activityWrites);
+	});
+
+	test('uses configured absolute and workspace-relative export folders', async () => {
+		const absoluteDirectory = path.join(directory, 'exports');
+		await mkdir(absoluteDirectory);
+		const absolute = await openTracker(undefined, undefined, {
+			skipOpen: true,
+			savePath: path.join(absoluteDirectory, 'absolute.json'),
+			settings: { exportDirectory: absoluteDirectory },
+		});
+		await absolute.commands.get('time-tracker.exportTimesheet')!();
+		assert.strictEqual(path.dirname(absolute.getSuggestedSavePath()), absoluteDirectory);
+		await absolute.deactivate();
+
+		const relativeDirectory = path.join(directory, 'relative-exports');
+		await mkdir(relativeDirectory);
+		const relative = await openTracker(undefined, undefined, {
+			skipOpen: true,
+			savePath: path.join(relativeDirectory, 'relative.json'),
+			settings: { exportDirectory: 'relative-exports' },
+			workspaceFolders: [directory],
+		});
+		await relative.commands.get('time-tracker.exportTimesheet')!();
+		assert.strictEqual(path.dirname(relative.getSuggestedSavePath()), relativeDirectory);
+		await relative.deactivate();
+	});
+
+	test('uses import settings and prefers the Outlook-specific folder', async () => {
+		const importDirectory = path.join(directory, 'imports');
+		const outlookDirectory = path.join(directory, 'outlook');
+		await mkdir(importDirectory);
+		await mkdir(outlookDirectory);
+		const importPath = path.join(importDirectory, 'timesheet.json');
+		await writeFile(importPath, JSON.stringify({
+			kind: 'time-tracker-timesheet',
+			schemaVersion: 1,
+			exportedAt: '2026-11-20T20:00:00.000Z',
+			entries: {},
+			holidays: [],
+		}));
+		const calendarImportPath = path.join(outlookDirectory, 'calendar.ics');
+		await writeFile(calendarImportPath, [
+			'BEGIN:VCALENDAR',
+			'BEGIN:VEVENT',
+			'UID:settings-test',
+			'DTSTART:20261124T090000',
+			'DTEND:20261124T100000',
+			'SUMMARY:Settings test',
+			'END:VEVENT',
+			'END:VCALENDAR',
+		].join('\r\n'));
+		const result = await openTracker(undefined, undefined, {
+			skipOpen: true,
+			importPath,
+			calendarImportPath,
+			settings: {
+				importDirectory,
+				outlookImportDirectory: outlookDirectory,
+			},
+		});
+		await result.commands.get('time-tracker.importTimesheet')!();
+		assert.strictEqual(result.getSuggestedOpenPath(), importDirectory);
+		await result.commands.get('time-tracker.openTimesheet')!();
+		await result.getReceiver()({ type: 'importOutlookCalendar', view: 'maintenance' });
+		assert.strictEqual(result.getSuggestedOpenPath(), outlookDirectory);
+		await result.deactivate();
+	});
+
+	test('invalid export directories warn and keep the normal picker fallback', async () => {
+		const missingDirectory = path.join(directory, 'missing-export');
+		const result = await openTracker(undefined, undefined, {
+			skipOpen: true,
+			settings: { exportDirectory: missingDirectory },
+		});
+		await result.commands.get('time-tracker.exportTimesheet')!();
+		assert.ok(result.warnings.some(message => message.includes(missingDirectory)));
+		assert.notStrictEqual(path.dirname(result.getSuggestedSavePath()), missingDirectory);
+		await result.deactivate();
 	});
 
 	test('cancels timesheet export without writing or claiming success', async () => {

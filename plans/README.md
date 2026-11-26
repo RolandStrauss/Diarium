@@ -24,12 +24,12 @@ Plan 021 adds the read-only Fun metrics tab.
 | 007 | Align release evidence and documentation | P0 | S | 004-006, 008 | TODO 📝 |
 | 010 | Move Outlook Calendar import to Maintenance | P1 | S | 009 | DONE ✅ |
 | 011 | Rename Task to Activity | P1 | S | — | DONE ✅ |
-| 012 | Configure export and import locations | P1 | M | 008 | TODO 📝 |
+| 012 | Configure export and import locations | P1 | M | 008 | DONE ✅ |
 | 013 | Track workspace open time | P1 | M | 002 | DONE ✅ |
 | 014 | Track workspace branches | P1 | M | 013 | DONE ✅ |
 | 015 | Track language extensions and edit saves | P1 | M | 013 | DONE ✅ |
-| 016 | Track executed tasks | P2 | M | 013 | TODO 📝 |
-| 017 | Track debug sessions | P2 | M | 013 | TODO 📝 |
+| 016 | Track executed tasks | P2 | M | 013 | DONE ✅ |
+| 017 | Track debug sessions | P2 | M | 013 | DONE ✅ |
 | 018 | Show and export workspace activity | P1 | L | 013-017 | TODO 📝 |
 | 019 | Export reports as CSV and JSON | P1 | M | 011, 012 | TODO 📝 |
 | 020 | Add yesterday and seven-day usage to Diarium status item | P1 | S | 013 | DONE ✅ |
