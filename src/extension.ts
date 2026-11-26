@@ -787,7 +787,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			type: string; entry?: TimeEntry; id?: string; expected?: StoredTimeEntry | null; date?: string;
 			requestId?: string;
 			command?: string;
-			value?: string; expectedValue?: string | number | null; view?: 'entries' | 'report' | 'holidays';
+			value?: string; expectedValue?: string | number | null; view?: 'entries' | 'report' | 'holidays' | 'maintenance';
 			holiday?: PublicHoliday;
 			periodStart?: string; periodEnd?: string; expectedStart?: string; expectedEnd?: string;
 		}) => {
@@ -830,6 +830,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						openLabel: 'Import Outlook Calendar',
 					});
 					if (!selection?.length) {
+						await panel.webview.postMessage({ type: 'maintenanceActionComplete' });
 						break;
 					}
 
@@ -862,6 +863,7 @@ export function activate(context: vscode.ExtensionContext): void {
 					);
 					if (!candidates.length) {
 						void vscode.window.showInformationMessage('Outlook Calendar import complete: 0 entries added.');
+						await panel.webview.postMessage({ type: 'maintenanceActionComplete' });
 						break;
 					}
 					const answer = await vscode.window.showWarningMessage(
@@ -870,6 +872,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						'Import',
 					);
 					if (answer !== 'Import') {
+						await panel.webview.postMessage({ type: 'maintenanceActionComplete' });
 						break;
 					}
 
@@ -890,6 +893,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						return added ? { ...state, entries } : state;
 					});
 					void vscode.window.showInformationMessage(`Outlook Calendar import complete: ${added} entries added.`);
+					await panel.webview.postMessage({ type: 'maintenanceActionComplete' });
 					break;
 				}
 				case 'ready':
@@ -1089,7 +1093,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			}
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				if (message.type === 'maintenanceAction') {
+				if (message.type === 'maintenanceAction' || message.type === 'importOutlookCalendar') {
 					await panel.webview.postMessage({ type: 'maintenanceActionError', message: reason });
 					return;
 				}

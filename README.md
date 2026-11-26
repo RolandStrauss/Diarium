@@ -35,7 +35,8 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 - The timesheet tabs support keyboard arrow, Home, and End navigation. Validation errors move focus to the affected
   field, and running, paused, excluded, and waiting states are announced as text.
 - **Maintenance** brings timesheet import/export, file-tracking pause/resume, exclusions, reset, floating timer,
-  and time-card preview together. Existing confirmations and Command Palette commands remain available.
+  Outlook Calendar import, and time-card preview together. Existing confirmations and Command Palette
+  commands remain available.
 - Timesheet and timer webviews follow VS Code light and dark colors. All webviews include high-contrast fallbacks.
   Time-card motion stops for reduced-motion preferences, and print output uses readable grayscale.
 

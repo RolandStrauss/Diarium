@@ -87,7 +87,8 @@ Rules:
 - Automatic background import or sync
 - File-activity totals or exclusions
 - Merge conflict user interfaces
-- CSV, database, ZIP, or encrypted formats
+- CSV and database formats for portable timesheet transfer
+- Encrypted or ZIP portable transfer formats
 - Importing reporting periods, rates, or templates
 
 ## Steps

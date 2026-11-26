@@ -531,7 +531,8 @@ suite('Manual timesheet', () => {
 		assert.match(html, /role="tablist" aria-label="Timesheet views"/);
 		assert.match(html, /id="entries-tab" role="tab" aria-selected="true"[^>]*tabindex="0"/);
 		assert.match(html, /id="report-tab" role="tab" aria-selected="false"[^>]*tabindex="-1"/);
-		assert.match(html, /id="import-outlook-calendar"[^>]*>Import Outlook Calendar<\/button>/);
+		assert.doesNotMatch(html, /id="import-outlook-calendar"/);
+		assert.match(html, /id="maintenance-outlook"[^>]*>Import Outlook Calendar<\/button>/);
 		assert.match(html, /@media \(forced-colors: active\)/);
 		assert.match(html, /outline: 2px solid Highlight/);
 		assert.match(html, /tr\.incomplete[\s\S]*?border-inline-start: 3px solid Highlight/);
@@ -550,6 +551,16 @@ suite('Manual timesheet', () => {
 			['maintenance-timer', 'time-tracker.showFloatingTimer'],
 			['maintenance-card', 'time-tracker.openTimeCard'],
 		];
+		const outlookCount = ui.messages.length;
+		ui.element('maintenance-outlook').dispatch('click');
+		assert.deepStrictEqual(JSON.parse(JSON.stringify(ui.messages.at(-1))), {
+			type: 'importOutlookCalendar', view: 'maintenance',
+		});
+		assert.strictEqual(ui.messages.length, outlookCount + 1);
+		assert.ok(actions.every(([button]) => ui.element(button).disabled));
+		assert.ok(ui.element('maintenance-outlook').disabled);
+		ui.deliver({ type: 'maintenanceActionComplete' });
+		assert.ok(!ui.element('maintenance-outlook').disabled);
 		const state = { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null, paused: false, excluded: false };
 		ui.send('state', state);
 		assert.strictEqual(ui.element('maintenance-toggle').textContent, 'Pause file tracking');

@@ -56,6 +56,9 @@ These observations describe the active working-tree code, not verified release b
 
 - **Discovery:** Startup activation and nine `time-tracker.*` commands are declared in the manifest.
 - **Timesheet:** A webview provides entries, date and task filters, calendar-year grid, summaries, and a report.
+- **Outlook Calendar import:** A local `.ics` file up to 5 MiB can add timed and all-day entries after
+  confirmation from Maintenance. Cancelled events, duplicate semantic entries, and unsupported entries are
+  not added.
 - **Manual storage:** A JSON file in extension global storage holds entries and preferences. Older
   `time-tracker.data` state is read when the file is absent.
 - **Portable timesheets:** Versioned JSON export includes manual entries and public holidays. Import validates
@@ -80,7 +83,7 @@ not directory paths. PDF card export currently rejects names outside printable A
 
 The unreferenced `ExcludeFiles`, `TimeTrackerProvider`, and `TimeCardGenerator` modules are not wired into the
 active entry point. Their old command names, Explorer view, and top-five card must not be described as active
-capabilities. The manifest currently declares version `0.1.3`, VS Code `^1.140.0`,
+capabilities. The manifest currently declares version `0.1.7`, VS Code `^1.140.0`,
 and the `pdfkit` runtime dependency. [E3, E4, E9]
 
 Current command identifiers are `time-tracker.openTimesheet`, `time-tracker.openTimeCard`,
@@ -126,6 +129,10 @@ Requirements apply to the release target. A baseline observation in section 4 do
 
 - Each saved entry has a valid local calendar date, a nonblank task description, and zero, one, or two
   24-hour `HH:mm` times. The date is the shift's start date. Any number of entries may share a date.
+- Importing an Outlook `.ics` file creates timed or all-day manual entries only after explicit confirmation.
+  Reject files larger than 5 MiB, skip cancelled events, and skip duplicate semantic entries already in
+  the import operation or local timesheet. The control is in Maintenance, not Entries. Outlook import never
+  changes automatic file activity.
 - Users can add, edit, or delete entries independently. Overlapping time ranges are allowed; totals sum each
   completed entry and may therefore exceed elapsed time when ranges overlap.
 - A task-only entry is saved but has no duration and is not incomplete. A row with no task and no times is blank.
@@ -382,6 +389,7 @@ not claims that the current implementation already meets them. A product owner m
 Links identify the inspected working-tree sources; the timer draft is historical input, not baseline evidence.
 
 - **E1:** [README](../README.md): documented workflows, storage, exports, and floating timer.
+- **Architecture:** [Architecture](ARCHITECTURE.md): active component boundaries, storage, data flows, and panel lifecycle.
 - **E2:** [Timer draft](timer_PRD.md) and [changelog](../CHANGELOG.md): proposed timer requirements and history.
 - **E3:** [Manifest](../package.json), [TypeScript configuration](../tsconfig.json),
   [test configuration](../.vscode-test.mjs), and [Playwright workflow](../.github/workflows/playwright.yml):
@@ -395,6 +403,8 @@ Links identify the inspected working-tree sources; the timer draft is historical
 - **E7:** [Packaging exclusions](../.vscodeignore) and [launch configuration](../.vscode/launch.json):
   packaging and extension-host launch setup.
 - **E8:** [Extension tests](../src/test/extension.test.ts), [report-action tests](../src/test/reportActions.test.ts),
+  [calendar parser and import tests](../src/test/timeData.test.ts),
+  [transfer tests](../src/test/timesheetTransfer.test.ts),
   and [card tests](../src/test/timeCard.test.ts): existing test cases and their limits.
 - **E9:** [Legacy exclusions](../src/excludeFiles.ts), [legacy provider](../src/timeTrackerProvider.ts), and
   [legacy card generator](../src/timeCardGenerator.ts): unconnected draft-era modules, not active features.

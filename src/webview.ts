@@ -117,7 +117,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 </header>
 <main>
 <section id="entries-view" class="view" role="tabpanel" aria-labelledby="entries-tab">
-<div class="toolbar"><div><label for="year-select">Calendar year</label><select id="year-select"></select></div><p class="subtle">Add multiple entries per date. Overnight shifts are calculated automatically.</p><button id="import-outlook-calendar" type="button">Import Outlook Calendar</button></div>
+<div class="toolbar"><div><label for="year-select">Calendar year</label><select id="year-select"></select></div><p class="subtle">Add multiple entries per date. Overnight shifts are calculated automatically.</p></div>
 <div class="period-controls">
 <label>Summary period<select id="summary-kind" aria-label="Summary period"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
 <label>Summary date<input id="summary-date" type="date" aria-label="Summary date" aria-describedby="entries-error"></label>
@@ -204,6 +204,7 @@ tr.incomplete { box-shadow: inset 3px 0 var(--warning); }
 <div class="maintenance-actions">
 <button id="maintenance-import" type="button">Import data</button>
 <button id="maintenance-export" class="primary" type="button">Export data</button>
+<button id="maintenance-outlook" type="button">Import Outlook Calendar</button>
 </div>
 </section>
 <section class="maintenance-card" aria-labelledby="maintenance-activity-heading">
@@ -509,7 +510,7 @@ const maintenanceActions = [
  ['maintenance-timer', 'time-tracker.showFloatingTimer'],
  ['maintenance-card', 'time-tracker.openTimeCard']
 ];
-const maintenanceButtons = maintenanceActions.map(([id]) => id);
+const maintenanceButtons = [...maintenanceActions.map(([id]) => id), 'maintenance-outlook'];
 function setMaintenanceBusy(busy) {
  maintenanceActionPending = busy;
  maintenanceButtons.forEach((id) => { byId(id).disabled = busy; });
@@ -520,6 +521,12 @@ maintenanceActions.forEach(([id, command]) => byId(id).addEventListener('click',
  byId('maintenance-error').textContent = '';
  vscode.postMessage({ type: 'maintenanceAction', command });
 }));
+byId('maintenance-outlook').addEventListener('click', () => {
+ if (maintenanceActionPending) return;
+ setMaintenanceBusy(true);
+ byId('maintenance-error').textContent = '';
+ vscode.postMessage({ type: 'importOutlookCalendar', view: 'maintenance' });
+});
 byId('holiday-date').value = localDateValue();
 byId('holiday-form').addEventListener('submit', (event) => {
  event.preventDefault();
@@ -536,9 +543,6 @@ byId('summary-date').addEventListener('change', renderSummary);
 byId('filter-date').addEventListener('change', () => { if (validDate(byId('filter-date').value)) { byId('filter-date').removeAttribute('aria-invalid'); renderYearSelect(); byId('year-select').value = String(Number(byId('filter-date').value.slice(0, 4))); } renderEntries(); });
 byId('filter-task').addEventListener('input', renderEntries);
 byId('clear-filters').addEventListener('click', () => { byId('filter-date').value = ''; byId('filter-task').value = ''; renderEntries(); });
-byId('import-outlook-calendar').addEventListener('click', () => {
- vscode.postMessage({ type: 'importOutlookCalendar', view: 'entries' });
-});
 byId('add-date').value = localDateValue();
 byId('add-form').addEventListener('submit', (event) => {
  event.preventDefault();

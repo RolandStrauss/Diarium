@@ -690,7 +690,7 @@ suite('Report actions', () => {
             'END:VCALENDAR',
         ].join('\r\n'));
         const result = await openTracker(undefined, undefined, { calendarImportPath: importPath, confirmImport: true });
-        await result.receiveMessage({ type: 'importOutlookCalendar', view: 'entries' });
+        await result.receiveMessage({ type: 'importOutlookCalendar', view: 'maintenance' });
         const once = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
         assert.ok(result.information.some(message => /Outlook Calendar import complete/.test(message)), JSON.stringify({ information: result.information, errors: result.errors }));
         assert.deepStrictEqual(once.entries['2026-11-24'][0], {
@@ -701,7 +701,7 @@ suite('Report actions', () => {
             timeOut: '10:30',
         });
         assert.match(once.entries['2026-11-24'][0].id, /^[a-f0-9]{32}$/);
-        await result.receiveMessage({ type: 'importOutlookCalendar', view: 'entries' });
+        await result.receiveMessage({ type: 'importOutlookCalendar', view: 'maintenance' });
         const twice = JSON.parse(await (0, promises_1.readFile)(path.join(directory, 'timesheet.json'), 'utf8'));
         assert.strictEqual(twice.entries['2026-11-24'].length, 1);
         assert.ok(result.information.some(message => /1 entries added/.test(message)));
