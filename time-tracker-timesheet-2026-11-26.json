@@ -1,0 +1,469 @@
+{
+  "kind": "time-tracker-timesheet",
+  "schemaVersion": 1,
+  "exportedAt": "2026-11-26T07:04:29.709Z",
+  "entries": {
+    "2026-11-09": [
+      {
+        "id": "c501486d9db84262c9671a0b4f4aa6e0",
+        "date": "2026-11-09",
+        "task": "Define staging-table metadata and plan Sprint 35 work.",
+        "timeIn": "07:30",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-10-21": [
+      {
+        "id": "cfd3faf5abe6f834ef6968e5c0c108be",
+        "date": "2026-10-21",
+        "task": "Rename collector references",
+        "timeIn": "07:00",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-10-22": [
+      {
+        "id": "02157672d6cdd414f65b8d860a433a01",
+        "date": "2026-10-22",
+        "task": "code/schema refactors",
+        "timeIn": "08:00",
+        "timeOut": "16:00"
+      }
+    ],
+    "2026-10-23": [
+      {
+        "id": "b8f86fe08c17a5fcdbdf376b24969519",
+        "date": "2026-10-23",
+        "task": "Verify and align planning and deliverables",
+        "timeIn": "07:00",
+        "timeOut": "16:00"
+      }
+    ],
+    "2026-10-26": [
+      {
+        "id": "4f35064f10a954107f76a1ca81a3093f",
+        "date": "2026-10-26",
+        "task": "Test driver procedures",
+        "timeIn": "08:00",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-10-27": [
+      {
+        "id": "740904df8543012d3cb35a10062f07c4",
+        "date": "2026-10-27",
+        "task": "Build Dyntrace Collector",
+        "timeIn": "07:00",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-10-28": [
+      {
+        "id": "7e6e4dec32ed80edf93003f79c022f36",
+        "date": "2026-10-28",
+        "task": "Build Dynatrace Sender",
+        "timeIn": "08:00",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-10-29": [
+      {
+        "id": "783dae528b03c500e810c30672905c1e",
+        "date": "2026-10-29",
+        "task": "Testing IBMi Dynatrace Observibility",
+        "timeIn": "07:00",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-10-30": [
+      {
+        "id": "49338de13a2b3c5f7a91b27efbf0e1cb",
+        "date": "2026-10-30",
+        "task": "Testing IBMi Dynatrace Observibility",
+        "timeIn": "08:00",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-11-02": [
+      {
+        "id": "78997b64889b49f21af3724ff6f13d40",
+        "date": "2026-11-02",
+        "task": "Refactor tests for IBMi Dynatrace and rebuild dyn_metric_stage table.",
+        "timeIn": "07:00",
+        "timeOut": "16:00"
+      }
+    ],
+    "2026-11-03": [
+      {
+        "id": "27b3e92c86a34c2e627bcf742f6a787a",
+        "date": "2026-11-03",
+        "task": "Add additional test data and align data-queue metric naming.",
+        "timeIn": "07:00",
+        "timeOut": "19:30"
+      }
+    ],
+    "2026-11-05": [
+      {
+        "id": "c73069c508134a41a382017cb536231b",
+        "date": "2026-11-05",
+        "task": "Add MVP test data and align data-queue metric naming.",
+        "timeIn": "07:30",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-11-06": [
+      {
+        "id": "a61053ace387381c1cc244fa37533cf3",
+        "date": "2026-11-06",
+        "task": "Test IBMi Dynatrace Observibility",
+        "timeIn": "07:30",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-11-10": [
+      {
+        "id": "ad89ee9de8af43ea6ab821bfe48863be",
+        "date": "2026-11-10",
+        "task": "Diagnose and fix security, endpoint, and driver procedures.",
+        "timeIn": "06:30",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-11-11": [
+      {
+        "id": "e401d8ba4216bedb7e1184c9201d0c8f",
+        "date": "2026-11-11",
+        "task": "Diagnose and fix security, endpoint, and driver procedures.",
+        "timeIn": "09:00",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-11-12": [
+      {
+        "id": "addec5d42f4a096722c49cfeb5e97768",
+        "date": "2026-11-12",
+        "task": "Build security and notification services",
+        "timeIn": "07:30",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-11-13": [
+      {
+        "id": "c8e3ae7966697165b0e5bf5a2b9d0a87",
+        "date": "2026-11-13",
+        "task": "Test Token APi Key Obfiscation",
+        "timeIn": "07:30",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-11-16": [
+      {
+        "id": "d655ac24f5ec23dc37f0ff5e722b5ba3",
+        "date": "2026-11-16",
+        "task": "Test DYNSEND for DTAQCTL  and DTAQVAR",
+        "timeIn": "07:00",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-11-17": [
+      {
+        "id": "d20769ac7e62985a85c8457a509186e0",
+        "date": "2026-11-17",
+        "task": "Unit Test DTAQ25; DTAQ50; DTAQ75 and DTAQ100",
+        "timeIn": "08:30",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-11-18": [
+      {
+        "id": "ef3efba78ca60ee6e83c5054c95ada5f",
+        "date": "2026-11-18",
+        "task": "Testing Token API key",
+        "timeIn": "08:30",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-11-19": [
+      {
+        "id": "c911e7da9b280fa4af79975d866328c0",
+        "date": "2026-11-19",
+        "task": "Analysing BUG 1444476 for 1001",
+        "timeIn": "08:30",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-11-20": [
+      {
+        "id": "136e43dd1b526bac83e040c067b0010d",
+        "date": "2026-11-20",
+        "task": "Analysing BUG 1444476 for 1001",
+        "timeIn": "08:30",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-11-23": [
+      {
+        "id": "6d97246c659a1780df644d8ecc6e5757",
+        "date": "2026-11-23",
+        "task": "Testing Rest API Tests for DTAQ posting",
+        "timeIn": "13:00",
+        "timeOut": "15:00"
+      },
+      {
+        "id": "9fd71542d59bcc5f94248f4fa495f210",
+        "date": "2026-11-23",
+        "task": "Rahul discussion i.r.o. Dynatrace DTAQ monitoring",
+        "timeIn": "10:15",
+        "timeOut": "10:30"
+      },
+      {
+        "id": "c1e76d33532ba35469794927d6448472",
+        "date": "2026-11-23",
+        "task": "Change Review - PB Tech Card",
+        "timeIn": "15:00",
+        "timeOut": "15:30"
+      },
+      {
+        "id": "576880e074bc0c3bfaafdb2677c189c6",
+        "date": "2026-11-23",
+        "task": "Card Planning",
+        "timeIn": "11:00",
+        "timeOut": "12:30"
+      },
+      {
+        "id": "c4271d9860ceb2fdbd112e53926573fb",
+        "date": "2026-11-23",
+        "task": "Card Solution Design",
+        "timeIn": "09:00",
+        "timeOut": "10:15"
+      },
+      {
+        "id": "7ae4403b3d3ee6e193b2b39ed041843e",
+        "date": "2026-11-23",
+        "task": "Card Ops Weekly",
+        "timeIn": "10:30",
+        "timeOut": "11:00"
+      },
+      {
+        "id": "5c2f4dd012a44e7e014a5a9d13be2ba5",
+        "date": "2026-11-23",
+        "task": "Check-in with Matthew",
+        "timeIn": "12:30",
+        "timeOut": "13:00"
+      }
+    ],
+    "2026-11-24": [
+      {
+        "id": "9d8299516eb98e857c86674afb121fa9",
+        "date": "2026-11-24",
+        "task": "Task: Testing Rest API Tests for DTAQ posting",
+        "timeIn": "07:00",
+        "timeOut": "09:00"
+      },
+      {
+        "id": "1b1818eff853014e92e709b0e666efbc",
+        "date": "2026-11-24",
+        "task": "Task: Testing Rest API Tests for DTAQ posting",
+        "timeIn": "09:30",
+        "timeOut": "10:00"
+      },
+      {
+        "id": "214df93d633af3b22fc08bc3377687c4",
+        "date": "2026-11-24",
+        "task": "Task: Testing Rest API Tests for DTAQ posting",
+        "timeIn": "11:00",
+        "timeOut": "14:00"
+      },
+      {
+        "id": "d03a1cda00b690aba664282f29fec4ec",
+        "date": "2026-11-24",
+        "task": "Card Stand up",
+        "timeIn": "09:00",
+        "timeOut": "09:30"
+      },
+      {
+        "id": "f18f84f8df78ff13e4115312f1c68770",
+        "date": "2026-11-24",
+        "task": "Private Bank Tech - CAB",
+        "timeIn": "14:00",
+        "timeOut": "15:00"
+      },
+      {
+        "id": "c91a96021e3e1e684068b63ee749f604",
+        "date": "2026-11-24",
+        "task": "Card - Tech",
+        "timeIn": "10:00",
+        "timeOut": "11:00"
+      },
+      {
+        "id": "01c4c9c4c96dd7c54646ca9c2778109c",
+        "date": "2026-11-24",
+        "task": "Rest API Tests for DTAQ posting with Taahir",
+        "timeIn": "15:00",
+        "timeOut": "16:30"
+      }
+    ],
+    "2026-11-26": [
+      {
+        "id": "ea67b711837614cebb04b5e9eaeb9157",
+        "date": "2026-11-26",
+        "task": "Card Stand up",
+        "timeIn": "09:00",
+        "timeOut": "09:30"
+      },
+      {
+        "id": "5268a15493153a4e3647dbdf4db793ed",
+        "date": "2026-11-26",
+        "task": "QA on Radar Connect and Solution Design on Event filtering",
+        "timeIn": "10:00",
+        "timeOut": "10:30"
+      },
+      {
+        "id": "546f5ab0d49af11bbf45e75239187162",
+        "date": "2026-11-26",
+        "task": "PB Engineering - PitC",
+        "timeIn": "11:00",
+        "timeOut": "12:00"
+      },
+      {
+        "id": "2b0be6a61a0080be2fc77f7f3fcdcd27",
+        "date": "2026-11-26",
+        "task": "Sprint 36",
+        "timeIn": "08:00",
+        "timeOut": "09:00"
+      },
+      {
+        "id": "c2c1d32cbcec7b8f59d49f2be031fc3f",
+        "date": "2026-11-26",
+        "task": "Sprint 36",
+        "timeIn": "09:30",
+        "timeOut": "10:00"
+      }
+    ],
+    "2026-11-27": [
+      {
+        "id": "ddb793e6aa475f1cff7ab780ae38834b",
+        "date": "2026-11-27",
+        "task": "Card Stand up",
+        "timeIn": "09:00",
+        "timeOut": "09:30"
+      },
+      {
+        "id": "32aa3ed33b70be337e57cf276822b839",
+        "date": "2026-11-27",
+        "task": "Card Devs Knowledge Transfer Session",
+        "timeIn": "13:30",
+        "timeOut": "14:30"
+      },
+      {
+        "id": "16382b3cb4baa412612a3e47176c7649",
+        "date": "2026-11-27",
+        "task": "Sprint 36",
+        "timeIn": "07:00",
+        "timeOut": "09:00"
+      },
+      {
+        "id": "5799595d5187e198f2dbf6ec427c2d00",
+        "date": "2026-11-27",
+        "task": "Sprint 36",
+        "timeIn": "09:30",
+        "timeOut": "13:30"
+      },
+      {
+        "id": "efc02c5417f93d4926e0811f5ee79943",
+        "date": "2026-11-27",
+        "task": "Sprint 36",
+        "timeIn": "14:30",
+        "timeOut": "15:30"
+      }
+    ],
+    "2026-11-30": [
+      {
+        "id": "c9c4caf2bfbcee8d6e1b99147a6a7681",
+        "date": "2026-11-30",
+        "task": "Change Review - PB Tech Card",
+        "timeIn": "15:00",
+        "timeOut": "15:30"
+      },
+      {
+        "id": "52dd2452a550e02d2e243e0a95e6d33f",
+        "date": "2026-11-30",
+        "task": "Card Solution Design",
+        "timeIn": "09:00",
+        "timeOut": "10:15"
+      },
+      {
+        "id": "7512fb8eaa9afa9ddd6b5ff9d17f40ca",
+        "date": "2026-11-30",
+        "task": "Card Ops Weekly",
+        "timeIn": "10:30",
+        "timeOut": "11:00"
+      },
+      {
+        "id": "1d268b4dded1729472d23918c1c03acb",
+        "date": "2026-11-30",
+        "task": "Sprint 36",
+        "timeIn": "07:00",
+        "timeOut": "09:00"
+      },
+      {
+        "id": "236e8996313502de952d5624396a218f",
+        "date": "2026-11-30",
+        "task": "Sprint 36",
+        "timeIn": "11:00",
+        "timeOut": "15:00"
+      }
+    ],
+    "2026-11-25": [
+      {
+        "id": "05f594c3f41fbdd92a7b5806ba858ba4",
+        "date": "2026-11-25",
+        "task": "Card Stand up",
+        "timeIn": "09:00",
+        "timeOut": "09:30"
+      },
+      {
+        "id": "f71b2927a2de537c76c1b8d7918b4099",
+        "date": "2026-11-25",
+        "task": "Refine Dynatrace workbench (Endpoint) on the i",
+        "timeIn": "09:30",
+        "timeOut": "14:30"
+      },
+      {
+        "id": "bce6fd7c75ad6eed8cda106ee39aa79d",
+        "date": "2026-11-25",
+        "task": "Testing Rest API Tests for DTAQ posting",
+        "timeIn": "08:30",
+        "timeOut": "09:00"
+      },
+      {
+        "id": "03ebdecba1ab4eb895e9ffeef0d48888",
+        "date": "2026-11-25",
+        "task": "Rocket RDOp installation",
+        "timeIn": "16:00",
+        "timeOut": "18:15"
+      },
+      {
+        "id": "016b0998c6bc7b34584d3a2756088a05",
+        "date": "2026-11-25",
+        "task": "Rocket RDOp installation",
+        "timeIn": "19:00",
+        "timeOut": "21:30"
+      }
+    ]
+  },
+  "holidays": [
+    {
+      "date": "2026-11-04",
+      "name": "Voting (LGE) Day"
+    },
+    {
+      "date": "2026-12-16",
+      "name": "Day of Reconcilliation"
+    },
+    {
+      "date": "2026-12-25",
+      "name": "Christmas"
+    }
+  ]
+}

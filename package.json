@@ -2,7 +2,7 @@
   "name": "Diarium",
   "displayName": "Diarium",
   "description": "Record work time and export local timesheet reports.",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "publisher": "ferraria",
   "repository": {
     "type": "git",
