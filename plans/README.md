@@ -13,27 +13,27 @@ Plan 021 adds the read-only Fun metrics tab.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Prevent duplicate manual entries | P1 | S | — | DONE |
-| 002 | Restore the extension CI verification gate | P1 | S | — | DONE |
-| 003 | Remove unreferenced legacy timer modules | P2 | S | — | DONE |
-| 004 | Verify accessibility and visual modes | P1 | M | 002 | DONE |
-| 005 | Verify extension host and packaged VSIX | P0 | M | 002 | BLOCKED |
-| 006 | Verify in-host file-activity performance | P1 | S | 002 | DONE |
-| 008 | Export and import timesheet data | P1 | M | 002 | DONE |
-| 009 | Maintenance tab | P1 | M | 002, 008 | DONE |
-| 007 | Align release evidence and documentation | P0 | S | 004-006, 008 | TODO |
-| 010 | Move Outlook Calendar import to Maintenance | P1 | S | 009 | DONE |
-| 011 | Rename Task to Activity | P1 | S | — | DONE |
-| 012 | Configure export and import locations | P1 | M | 008 | TODO |
-| 013 | Track workspace open time | P1 | M | 002 | DONE |
-| 014 | Track workspace branches | P1 | M | 013 | TODO |
-| 015 | Track language extensions and edit saves | P1 | M | 013 | TODO |
-| 016 | Track executed tasks | P2 | M | 013 | TODO |
-| 017 | Track debug sessions | P2 | M | 013 | TODO |
-| 018 | Show and export workspace activity | P1 | L | 013-017 | TODO |
-| 019 | Export reports as CSV and JSON | P1 | M | 011, 012 | TODO |
-| 020 | Add yesterday and seven-day usage to Diarium status item | P1 | S | 013 | DONE |
-| 021 | Add Fun metrics tab | P1 | M | 013-018 | TODO |
+| 001 | Prevent duplicate manual entries | P1 | S | — | DONE ✅ |
+| 002 | Restore the extension CI verification gate | P1 | S | — | DONE ✅ |
+| 003 | Remove unreferenced legacy timer modules | P2 | S | — | DONE ✅ |
+| 004 | Verify accessibility and visual modes | P1 | M | 002 | DONE ✅ |
+| 005 | Verify extension host and packaged VSIX | P0 | M | 002 | BLOCKED 🚫 |
+| 006 | Verify in-host file-activity performance | P1 | S | 002 | DONE ✅ |
+| 008 | Export and import timesheet data | P1 | M | 002 | DONE ✅ |
+| 009 | Maintenance tab | P1 | M | 002, 008 | DONE ✅ |
+| 007 | Align release evidence and documentation | P0 | S | 004-006, 008 | TODO 📝 |
+| 010 | Move Outlook Calendar import to Maintenance | P1 | S | 009 | DONE ✅ |
+| 011 | Rename Task to Activity | P1 | S | — | DONE ✅ |
+| 012 | Configure export and import locations | P1 | M | 008 | TODO 📝 |
+| 013 | Track workspace open time | P1 | M | 002 | DONE ✅ |
+| 014 | Track workspace branches | P1 | M | 013 | DONE ✅ |
+| 015 | Track language extensions and edit saves | P1 | M | 013 | DONE ✅ |
+| 016 | Track executed tasks | P2 | M | 013 | TODO 📝 |
+| 017 | Track debug sessions | P2 | M | 013 | TODO 📝 |
+| 018 | Show and export workspace activity | P1 | L | 013-017 | TODO 📝 |
+| 019 | Export reports as CSV and JSON | P1 | M | 011, 012 | TODO 📝 |
+| 020 | Add yesterday and seven-day usage to Diarium status item | P1 | S | 013 | DONE ✅ |
+| 021 | Add Fun metrics tab | P1 | M | 013-018 | TODO 📝 |
 
 ## Dependency notes
 

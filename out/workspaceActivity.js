@@ -1,8 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WorkspaceActivityTracker = void 0;
+exports.resolveLanguageExtension = resolveLanguageExtension;
 exports.parseWorkspaceActivity = parseWorkspaceActivity;
 exports.createWorkspaceIdentity = createWorkspaceIdentity;
+exports.createRepositoryIdentity = createRepositoryIdentity;
+exports.getBranchLabel = getBranchLabel;
 exports.summarizeWorkspaceUsage = summarizeWorkspaceUsage;
 exports.splitWorkspaceInterval = splitWorkspaceInterval;
 const node_crypto_1 = require("node:crypto");
@@ -25,6 +28,19 @@ function isIsoTimestamp(value) {
     return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) &&
         Number.isFinite(Date.parse(value));
 }
+function branchKey(identity) {
+    return (0, node_crypto_1.createHash)('sha256').update(`${identity.repositoryId}\0${identity.name}`).digest('hex').slice(0, 32);
+}
+function resolveLanguageExtension(languageId, candidates) {
+    const match = candidates.find(candidate => candidate.languageIds.includes(languageId));
+    if (!match) {
+        return { extensionId: 'unknown', displayName: 'Unknown' };
+    }
+    return {
+        extensionId: match.extensionId,
+        displayName: match.builtIn ? 'Built-in' : match.displayName,
+    };
+}
 function parseWorkspaceActivity(value) {
     if (value === undefined) {
         return { version: 1, workspaces: Object.create(null), sessions: [] };
@@ -38,10 +54,49 @@ function parseWorkspaceActivity(value) {
         if (!/^[a-f0-9]{32}$/.test(id) || !isPlainObject(workspace) ||
             typeof workspace.name !== 'string' || !workspace.name ||
             typeof workspace.totalSeconds !== 'number' ||
-            !Number.isSafeInteger(workspace.totalSeconds) || workspace.totalSeconds < 0) {
+            !Number.isSafeInteger(workspace.totalSeconds) || workspace.totalSeconds < 0 ||
+            (workspace.branches !== undefined && !isPlainObject(workspace.branches)) ||
+            (workspace.extensions !== undefined && !isPlainObject(workspace.extensions))) {
             throw new Error('Invalid stored workspace activity data. Restore a backup before using workspace tracking.');
         }
-        workspaces[id] = { name: workspace.name, totalSeconds: workspace.totalSeconds };
+        const branches = Object.create(null);
+        for (const [key, branch] of Object.entries(workspace.branches ?? {})) {
+            if (!isPlainObject(branch) ||
+                typeof branch.repositoryId !== 'string' ||
+                typeof branch.name !== 'string' || !branch.name ||
+                typeof branch.totalSeconds !== 'number' ||
+                !Number.isSafeInteger(branch.totalSeconds) || branch.totalSeconds < 0) {
+                throw new Error('Invalid stored workspace activity data. Restore a backup before using workspace tracking.');
+            }
+            branches[key] = {
+                repositoryId: branch.repositoryId,
+                name: branch.name,
+                totalSeconds: branch.totalSeconds,
+            };
+        }
+        const extensions = Object.create(null);
+        for (const [key, extension] of Object.entries(workspace.extensions ?? {})) {
+            if (!isPlainObject(extension) ||
+                typeof extension.extensionId !== 'string' || !extension.extensionId ||
+                typeof extension.displayName !== 'string' || !extension.displayName ||
+                typeof extension.languageId !== 'string' || !extension.languageId ||
+                typeof extension.editCount !== 'number' ||
+                !Number.isSafeInteger(extension.editCount) || extension.editCount < 0 ||
+                typeof extension.saveCount !== 'number' ||
+                !Number.isSafeInteger(extension.saveCount) || extension.saveCount < 0 ||
+                !isIsoTimestamp(extension.lastSeenAt)) {
+                throw new Error('Invalid stored workspace activity data. Restore a backup before using workspace tracking.');
+            }
+            extensions[key] = {
+                extensionId: extension.extensionId,
+                displayName: extension.displayName,
+                languageId: extension.languageId,
+                editCount: extension.editCount,
+                saveCount: extension.saveCount,
+                lastSeenAt: extension.lastSeenAt,
+            };
+        }
+        workspaces[id] = { name: workspace.name, totalSeconds: workspace.totalSeconds, branches, extensions };
     }
     const sessions = [];
     for (const session of value.sessions) {
@@ -68,6 +123,13 @@ function createWorkspaceIdentity(canonicalIdentity, name) {
         id: (0, node_crypto_1.createHash)('sha256').update(canonicalIdentity).digest('hex').slice(0, 32),
         name: name.trim() || 'Workspace',
     };
+}
+function createRepositoryIdentity(canonicalIdentity) {
+    return (0, node_crypto_1.createHash)('sha256').update(canonicalIdentity).digest('hex').slice(0, 32);
+}
+function getBranchLabel(head) {
+    const name = head?.name?.trim();
+    return name || (head?.commit ? 'Detached HEAD' : 'Unknown');
 }
 function summarizeWorkspaceUsage(record, nowMs = Date.now()) {
     const now = new Date(nowMs);
@@ -128,6 +190,8 @@ class WorkspaceActivityTracker {
     focused = false;
     live;
     workspaceIdentity;
+    branchIdentities = new Map();
+    liveBranches = new Map();
     pendingWrites = Promise.resolve();
     constructor(stored, persist, now = Date.now) {
         this.persist = persist;
@@ -139,7 +203,18 @@ class WorkspaceActivityTracker {
             version: 1,
             workspaces: Object.fromEntries(Object.entries(this.record.workspaces).map(([id, workspace]) => [
                 id,
-                { name: workspace.name, totalSeconds: workspace.totalSeconds },
+                {
+                    name: workspace.name,
+                    totalSeconds: workspace.totalSeconds,
+                    branches: Object.fromEntries(Object.entries(workspace.branches ?? {}).map(([key, branch]) => [
+                        key,
+                        { ...branch },
+                    ])),
+                    extensions: Object.fromEntries(Object.entries(workspace.extensions ?? {}).map(([key, extension]) => [
+                        key,
+                        { ...extension },
+                    ])),
+                },
             ])),
             sessions: this.record.sessions.map(session => ({ ...session })),
         };
@@ -172,46 +247,109 @@ class WorkspaceActivityTracker {
         }
     }
     setWorkspace(identity) {
-        this.workspaceIdentity = identity;
         const now = this.now();
-        if (this.live) {
-            this.settleAt(now);
-            this.live = undefined;
-        }
-        this.startLive();
+        this.settleAt(now);
+        this.settleBranchesAt(now);
+        this.live = undefined;
+        this.liveBranches.clear();
+        this.workspaceIdentity = identity;
+        this.startLive(now);
         void this.persistRecord();
     }
     checkpoint() {
         if (!this.live) {
             return Promise.resolve();
         }
-        this.settleAt(this.now());
-        this.live = this.enabled && this.focused
-            ? { identity: this.liveIdentity(), startedAtMs: this.now() }
+        const now = this.now();
+        this.settleAt(now);
+        this.settleBranchesAt(now);
+        this.live = this.enabled && this.focused && this.workspaceIdentity
+            ? { identity: this.workspaceIdentity, startedAtMs: now }
             : undefined;
+        this.liveBranches.clear();
+        this.startLiveBranches(now);
         return this.persistRecord();
     }
+    setBranches(identities) {
+        const next = new Map();
+        for (const identity of identities) {
+            const name = identity.name.trim();
+            if (identity.repositoryId && name) {
+                next.set(identity.repositoryId, { repositoryId: identity.repositoryId, name });
+            }
+        }
+        const changed = next.size !== this.branchIdentities.size ||
+            [...next].some(([repositoryId, identity]) => this.branchIdentities.get(repositoryId)?.name !== identity.name);
+        if (!changed) {
+            return;
+        }
+        const now = this.now();
+        for (const [repositoryId, live] of this.liveBranches) {
+            if (next.get(repositoryId)?.name !== live.identity.name) {
+                this.settleBranchAt(live, now);
+                this.liveBranches.delete(repositoryId);
+            }
+        }
+        this.branchIdentities = next;
+        this.startLiveBranches(now);
+        void this.persistRecord();
+    }
+    recordExtensionActivity(identity, kind, seenAtMs = this.now()) {
+        if (!this.enabled || !this.workspaceIdentity) {
+            return;
+        }
+        if (!identity.extensionId || !identity.displayName || !identity.languageId ||
+            !Number.isFinite(seenAtMs) || !Number.isFinite(new Date(seenAtMs).getTime())) {
+            throw new Error('Invalid workspace extension activity.');
+        }
+        const workspace = Object.hasOwn(this.record.workspaces, this.workspaceIdentity.id)
+            ? this.record.workspaces[this.workspaceIdentity.id]
+            : { name: this.workspaceIdentity.name, totalSeconds: 0, extensions: Object.create(null) };
+        workspace.name = this.workspaceIdentity.name;
+        workspace.extensions ??= Object.create(null);
+        const existing = workspace.extensions[identity.extensionId] ?? {
+            extensionId: identity.extensionId,
+            displayName: identity.displayName,
+            languageId: identity.languageId,
+            editCount: 0,
+            saveCount: 0,
+            lastSeenAt: new Date(seenAtMs).toISOString(),
+        };
+        existing.displayName = identity.displayName;
+        existing.languageId = identity.languageId;
+        existing.lastSeenAt = new Date(seenAtMs).toISOString();
+        if (kind === 'edit') {
+            existing.editCount++;
+        }
+        else {
+            existing.saveCount++;
+        }
+        workspace.extensions[identity.extensionId] = existing;
+        this.record.workspaces[this.workspaceIdentity.id] = workspace;
+        void this.persistRecord();
+    }
     shutdown() {
-        this.settleAt(this.now());
+        const now = this.now();
+        this.settleAt(now);
+        this.settleBranchesAt(now);
         this.live = undefined;
+        this.liveBranches.clear();
         this.enabled = false;
         this.focused = false;
         return this.persistRecord();
     }
-    liveIdentity() {
-        if (!this.live) {
-            throw new Error('Workspace tracking interval is unavailable.');
-        }
-        return this.live.identity;
-    }
-    startLive() {
+    startLive(startedAtMs = this.now()) {
         if (!this.live && this.enabled && this.focused && this.workspaceIdentity) {
-            this.live = { identity: this.workspaceIdentity, startedAtMs: this.now() };
+            this.live = { identity: this.workspaceIdentity, startedAtMs };
         }
+        this.startLiveBranches(startedAtMs);
     }
     settleAndPersist() {
-        this.settleAt(this.now());
+        const now = this.now();
+        this.settleAt(now);
+        this.settleBranchesAt(now);
         this.live = undefined;
+        this.liveBranches.clear();
         return this.persistRecord();
     }
     settleAt(endMs) {
@@ -229,11 +367,50 @@ class WorkspaceActivityTracker {
             });
             const workspace = Object.hasOwn(this.record.workspaces, identity.id)
                 ? this.record.workspaces[identity.id]
-                : { name: identity.name, totalSeconds: 0 };
+                : { name: identity.name, totalSeconds: 0, branches: Object.create(null) };
             workspace.name = identity.name;
+            workspace.branches ??= Object.create(null);
             workspace.totalSeconds += segment.seconds;
             this.record.workspaces[identity.id] = workspace;
         }
+    }
+    startLiveBranches(startedAtMs) {
+        if (!this.live || !this.enabled || !this.focused) {
+            return;
+        }
+        for (const [repositoryId, identity] of this.branchIdentities) {
+            if (!this.liveBranches.has(repositoryId)) {
+                this.liveBranches.set(repositoryId, { identity, startedAtMs });
+            }
+        }
+    }
+    settleBranchesAt(endMs) {
+        for (const live of this.liveBranches.values()) {
+            this.settleBranchAt(live, endMs);
+        }
+    }
+    settleBranchAt(live, endMs) {
+        if (!this.workspaceIdentity) {
+            return;
+        }
+        const seconds = Math.floor(Math.max(0, endMs - live.startedAtMs) / 1000);
+        if (!seconds) {
+            return;
+        }
+        const workspace = Object.hasOwn(this.record.workspaces, this.workspaceIdentity.id)
+            ? this.record.workspaces[this.workspaceIdentity.id]
+            : { name: this.workspaceIdentity.name, totalSeconds: 0, branches: Object.create(null) };
+        workspace.name = this.workspaceIdentity.name;
+        workspace.branches ??= Object.create(null);
+        const key = branchKey(live.identity);
+        const branch = workspace.branches[key] ?? {
+            repositoryId: live.identity.repositoryId,
+            name: live.identity.name,
+            totalSeconds: 0,
+        };
+        branch.totalSeconds += seconds;
+        workspace.branches[key] = branch;
+        this.record.workspaces[this.workspaceIdentity.id] = workspace;
     }
     persistRecord() {
         const write = this.pendingWrites.then(async () => {

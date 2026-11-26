@@ -1,6 +1,6 @@
 ---
 title: "Plan 014: Track workspace branches"
-status: "Planning"
+status: "Done"
 ---
 
 ## Status
@@ -10,7 +10,7 @@ status: "Planning"
 - Risk: MED
 - Depends on: plan 013
 - Category: enhancement
-- Status: TODO
+- Status: DONE
 
 ## Why
 
@@ -44,10 +44,10 @@ Branches explain where workspace open time was spent. Branch names are sensitive
 
 ## Done criteria
 
-- [ ] Branch totals are local and opt-in.
-- [ ] Branch switches do not lose open time.
-- [ ] Git-unavailable workspaces remain valid.
-- [ ] Branch names are never included in network requests or telemetry.
+- [x] Branch totals are local and opt-in.
+- [x] Branch switches do not lose open time.
+- [x] Git-unavailable workspaces remain valid.
+- [x] Branch names are never included in network requests or telemetry.
 
 ## STOP conditions
 

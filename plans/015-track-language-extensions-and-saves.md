@@ -1,6 +1,6 @@
 ---
 title: "Plan 015: Track language extensions and edit saves"
-status: "Planning"
+status: "Done"
 ---
 
 ## Status
@@ -10,7 +10,7 @@ status: "Planning"
 - Risk: MED
 - Depends on: plan 013
 - Category: enhancement
-- Status: TODO
+- Status: DONE
 
 ## Why
 
@@ -53,10 +53,10 @@ Store only totals and the last-seen timestamp unless a future plan explicitly ad
 
 ## Done criteria
 
-- [ ] Extension usage reports edit and save totals.
-- [ ] Counting rules are deterministic.
-- [ ] Workspace attribution is conservative.
-- [ ] No source content or file paths enter the store.
+- [x] Extension usage reports edit and save totals.
+- [x] Counting rules are deterministic.
+- [x] Workspace attribution is conservative.
+- [x] No source content or file paths enter the store.
 
 ## STOP conditions
 

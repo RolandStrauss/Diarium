@@ -18,9 +18,15 @@ import { createTimeCard, renderTimeCardHtml, renderTimeCardPdf, type TimeCard } 
 import { acquireStorageOwnership, StorageInUseError } from './storageOwnership';
 import {
 	createWorkspaceIdentity,
+	createRepositoryIdentity,
+	getBranchLabel,
+	resolveLanguageExtension,
 	summarizeWorkspaceUsage,
 	WorkspaceActivityTracker,
+	type WorkspaceBranchIdentity,
 	type WorkspaceIdentity,
+	type LanguageExtensionCandidate,
+	type ResolvedLanguageExtension,
 } from './workspaceActivity';
 
 const STORAGE_KEY = 'time-tracker.data';
@@ -71,6 +77,37 @@ let pendingTimesheetWrites = Promise.resolve();
 let pendingTimesheetLoad: Promise<TrackerState> | undefined;
 let stopTracking: (() => void) | undefined;
 let workspaceActivityTracker: WorkspaceActivityTracker | undefined;
+let refreshWorkspaceBranches = (): void => {};
+let stopWorkspaceBranchTracking: (() => void) | undefined;
+
+interface GitRepository {
+	readonly rootUri: vscode.Uri;
+	readonly state?: {
+		readonly HEAD?: {
+			readonly name?: string;
+			readonly commit?: string;
+		};
+	};
+	readonly onDidChangeState?: vscode.Event<void>;
+}
+
+interface GitApi {
+	readonly repositories: readonly GitRepository[];
+	readonly onDidChangeState?: vscode.Event<void>;
+}
+
+interface GitExtension {
+	getAPI(version: 1): GitApi;
+}
+
+interface ExtensionManifest {
+	displayName?: string;
+	name?: string;
+	isBuiltin?: boolean;
+	contributes?: {
+		languages?: readonly { id?: string }[];
+	};
+}
 
 function newEntryId(): string {
 	return randomBytes(16).toString('hex');
@@ -501,6 +538,143 @@ export function activate(context: vscode.ExtensionContext): void {
 	const fileTimePanels = new Set<vscode.WebviewPanel>();
 	let stopping = false;
 	const tracker = fileTimeTracker;
+	const languageExtensionCandidates: LanguageExtensionCandidate[] = vscode.extensions.all.flatMap(extension => {
+		const manifest: ExtensionManifest = extension.packageJSON;
+		const languageIds = (manifest.contributes?.languages ?? [])
+			.map(language => language.id)
+			.filter((languageId): languageId is string => !!languageId);
+		if (!languageIds.length) {
+			return [];
+		}
+		return [{
+			extensionId: extension.id,
+			displayName: manifest.displayName?.trim() || manifest.name?.trim() || extension.id,
+			languageIds,
+			builtIn: manifest.isBuiltin === true || extension.id.startsWith('vscode.'),
+		}];
+	});
+	const languageExtensionCache = new Map<string, ResolvedLanguageExtension>();
+	const resolveDocumentExtension = (languageId: string): ResolvedLanguageExtension => {
+		const cached = languageExtensionCache.get(languageId);
+		if (cached) {
+			return cached;
+		}
+		const resolved = resolveLanguageExtension(languageId, languageExtensionCandidates);
+		languageExtensionCache.set(languageId, resolved);
+		return resolved;
+	};
+	const editBurstTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	const pendingEditDocuments = new Map<string, { document: vscode.TextDocument; languageId: string }>();
+	const documentChangeListener = vscode.workspace.onDidChangeTextDocument(event => {
+		if (stopping || !workspaceActivityTracker?.isEnabled() ||
+			!vscode.workspace.getWorkspaceFolder(event.document.uri)) {
+			return;
+		}
+		const key = event.document.uri.toString();
+		const previous = editBurstTimers.get(key);
+		if (previous) {
+			clearTimeout(previous);
+		}
+		pendingEditDocuments.set(key, { document: event.document, languageId: event.document.languageId });
+		const timer = setTimeout(() => {
+			editBurstTimers.delete(key);
+			const pending = pendingEditDocuments.get(key);
+			pendingEditDocuments.delete(key);
+			if (stopping || !workspaceActivityTracker?.isEnabled() ||
+				!pending || !vscode.workspace.getWorkspaceFolder(pending.document.uri)) {
+				return;
+			}
+			const resolved = resolveDocumentExtension(pending.languageId);
+			workspaceActivityTracker?.recordExtensionActivity({
+				...resolved,
+				languageId: pending.languageId || 'unknown',
+			}, 'edit');
+		}, 500);
+		editBurstTimers.set(key, timer);
+	});
+	const documentSaveListener = vscode.workspace.onDidSaveTextDocument(document => {
+		if (stopping || !vscode.workspace.getWorkspaceFolder(document.uri)) {
+			return;
+		}
+		const languageId = document.languageId || 'unknown';
+		const resolved = resolveDocumentExtension(languageId);
+		workspaceActivityTracker?.recordExtensionActivity({
+			...resolved,
+			languageId,
+		}, 'save');
+	});
+	const disposeEditBurstTimers = {
+		dispose: (): void => {
+			for (const timer of editBurstTimers.values()) {
+				clearTimeout(timer);
+			}
+			editBurstTimers.clear();
+			pendingEditDocuments.clear();
+		},
+	};
+	const configureGitBranchTracking = async (): Promise<void> => {
+		const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+		if (!gitExtension) {
+			return;
+		}
+		const git = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
+		if (stopping || !git) {
+			return;
+		}
+		const api = git.getAPI(1);
+		let repositoryListeners: vscode.Disposable[] = [];
+		let disposed = false;
+		const refresh = (): void => {
+			if (disposed || stopping) {
+				return;
+			}
+			for (const listener of repositoryListeners) {
+				listener.dispose();
+			}
+			repositoryListeners = [];
+			const identities: WorkspaceBranchIdentity[] = [];
+			for (const repository of api.repositories) {
+				if (!vscode.workspace.getWorkspaceFolder(repository.rootUri)) {
+					continue;
+				}
+				identities.push({
+					repositoryId: createRepositoryIdentity(repository.rootUri.toString()),
+					name: getBranchLabel(repository.state?.HEAD),
+				});
+				if (repository.onDidChangeState) {
+					repositoryListeners.push(repository.onDidChangeState(refresh));
+				}
+			}
+			workspaceActivityTracker?.setBranches(identities);
+		};
+		const apiListener = api.onDidChangeState?.(refresh);
+		const dispose = (): void => {
+			if (disposed) {
+				return;
+			}
+			disposed = true;
+			apiListener?.dispose();
+			for (const listener of repositoryListeners) {
+				listener.dispose();
+			}
+			repositoryListeners = [];
+			if (refreshWorkspaceBranches === refresh) {
+				refreshWorkspaceBranches = () => {};
+			}
+			if (stopWorkspaceBranchTracking === dispose) {
+				stopWorkspaceBranchTracking = undefined;
+			}
+		};
+		stopWorkspaceBranchTracking = dispose;
+		refreshWorkspaceBranches = refresh;
+		refresh();
+	};
+	void configureGitBranchTracking().catch(error => {
+		if (!stopping) {
+			const reason = error instanceof Error ? error.message : String(error);
+			void vscode.window.showWarningMessage(`Git branch activity is unavailable: ${reason}`);
+		}
+	});
 	const currentSnapshot = () => {
 		const snapshot = tracker.snapshot();
 		return { ...snapshot, excluded: !!snapshot.activeFile && tracker.isExcluded(snapshot.activeFile) };
@@ -763,6 +937,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	});
 	const workspaceFoldersListener = vscode.workspace?.onDidChangeWorkspaceFolders?.(() => {
 		workspaceActivityTracker?.setWorkspace(currentWorkspaceIdentity());
+		refreshWorkspaceBranches();
 		refreshWorkspaceUsage();
 	}) ?? { dispose: () => {} };
 	const workspaceConfigurationListener = vscode.workspace?.onDidChangeConfiguration?.(event => {
@@ -774,6 +949,10 @@ export function activate(context: vscode.ExtensionContext): void {
 		workspaceActivityTracker?.setEnabled(enabled);
 		workspaceActivityTracker?.setWorkspace(currentWorkspaceIdentity());
 		workspaceActivityTracker?.setFocused(vscode.window.state.focused);
+		if (!enabled) {
+			disposeEditBurstTimers.dispose();
+		}
+		refreshWorkspaceBranches();
 		refreshWorkspaceUsage();
 	}) ?? { dispose: () => {} };
 	const fileTimeInterval = setInterval(() => {
@@ -783,6 +962,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	}, 60_000);
 	const workspaceActivityInterval = setInterval(() => {
 		if (!stopping) {
+			refreshWorkspaceBranches();
 			const checkpoint = workspaceActivityTracker?.checkpoint();
 			void checkpoint?.then(() => {
 				refreshWorkspaceUsage();
@@ -1225,6 +1405,9 @@ export function activate(context: vscode.ExtensionContext): void {
 		windowStateListener,
 		workspaceFoldersListener,
 		workspaceConfigurationListener,
+		documentChangeListener,
+		documentSaveListener,
+		disposeEditBurstTimers,
 		{ dispose: () => clearInterval(fileTimeInterval) },
 		{ dispose: () => clearInterval(workspaceActivityInterval) },
 		{ dispose: () => clearInterval(displayInterval) },
@@ -1233,6 +1416,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export async function deactivate(): Promise<void> {
 	stopTracking?.();
+	stopWorkspaceBranchTracking?.();
 	try {
 		const results = await Promise.allSettled([
 			fileTimeTracker?.setActiveFile(undefined),
@@ -1248,6 +1432,8 @@ export async function deactivate(): Promise<void> {
 		fileTimeTracker = undefined;
 		workspaceActivityTracker = undefined;
 		stopTracking = undefined;
+		refreshWorkspaceBranches = () => {};
+		stopWorkspaceBranchTracking = undefined;
 		releaseStorageOwnership?.();
 		releaseStorageOwnership = undefined;
 	}

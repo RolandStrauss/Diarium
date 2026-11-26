@@ -148,5 +148,75 @@ suite('Workspace activity', () => {
         await tracker.checkpoint();
         assert.strictEqual(tracker.snapshot().sessions.reduce((total, session) => total + session.seconds, 0), 90);
     });
+    test('settles branch switches once under the repository identity', async () => {
+        let now = new Date(2026, 10, 25, 9, 0).getTime();
+        const tracker = new workspaceActivity_1.WorkspaceActivityTracker(undefined, async () => { }, () => now);
+        const workspace = (0, workspaceActivity_1.createWorkspaceIdentity)('workspace-one', 'Diarium');
+        const repositoryId = (0, workspaceActivity_1.createRepositoryIdentity)('repository-one');
+        tracker.setEnabled(true);
+        tracker.setWorkspace(workspace);
+        tracker.setBranches([{ repositoryId, name: 'main' }]);
+        tracker.setFocused(true);
+        now += 60_000;
+        tracker.setBranches([{ repositoryId, name: 'feature' }]);
+        now += 30_000;
+        await tracker.checkpoint();
+        const branches = Object.values(tracker.snapshot().workspaces[workspace.id].branches ?? {});
+        assert.strictEqual(branches.find(branch => branch.name === 'main')?.totalSeconds, 60);
+        assert.strictEqual(branches.find(branch => branch.name === 'feature')?.totalSeconds, 30);
+        await tracker.checkpoint();
+        const afterSecondCheckpoint = Object.values(tracker.snapshot().workspaces[workspace.id].branches ?? {});
+        assert.strictEqual(afterSecondCheckpoint.find(branch => branch.name === 'main')?.totalSeconds, 60);
+        assert.strictEqual(afterSecondCheckpoint.find(branch => branch.name === 'feature')?.totalSeconds, 30);
+    });
+    test('labels detached and unavailable Git states without exposing commit hashes', () => {
+        assert.strictEqual((0, workspaceActivity_1.getBranchLabel)({ name: '  main ' }), 'main');
+        assert.strictEqual((0, workspaceActivity_1.getBranchLabel)({ commit: 'abc123' }), 'Detached HEAD');
+        assert.strictEqual((0, workspaceActivity_1.getBranchLabel)(undefined), 'Unknown');
+        assert.strictEqual((0, workspaceActivity_1.getBranchLabel)({}), 'Unknown');
+    });
+    test('aggregates extension edits and saves by workspace and extension', () => {
+        let now = new Date(2026, 10, 25, 9, 0).getTime();
+        const tracker = new workspaceActivity_1.WorkspaceActivityTracker(undefined, async () => { }, () => now);
+        const workspace = (0, workspaceActivity_1.createWorkspaceIdentity)('workspace-one', 'Diarium');
+        tracker.setEnabled(true);
+        tracker.setWorkspace(workspace);
+        tracker.recordExtensionActivity({
+            extensionId: 'publisher.editor',
+            displayName: 'Editor',
+            languageId: 'typescript',
+        }, 'edit');
+        now += 1_000;
+        tracker.recordExtensionActivity({
+            extensionId: 'publisher.editor',
+            displayName: 'Editor',
+            languageId: 'javascript',
+        }, 'save');
+        assert.deepStrictEqual(tracker.snapshot().workspaces[workspace.id].extensions, {
+            'publisher.editor': {
+                extensionId: 'publisher.editor',
+                displayName: 'Editor',
+                languageId: 'javascript',
+                editCount: 1,
+                saveCount: 1,
+                lastSeenAt: new Date(now).toISOString(),
+            },
+        });
+    });
+    test('resolves built-in and unknown language extensions safely', () => {
+        assert.deepStrictEqual((0, workspaceActivity_1.resolveLanguageExtension)('typescript', [{
+                extensionId: 'vscode.typescript-language-features',
+                displayName: 'TypeScript',
+                languageIds: ['typescript'],
+                builtIn: true,
+            }]), {
+            extensionId: 'vscode.typescript-language-features',
+            displayName: 'Built-in',
+        });
+        assert.deepStrictEqual((0, workspaceActivity_1.resolveLanguageExtension)('unknown', []), {
+            extensionId: 'unknown',
+            displayName: 'Unknown',
+        });
+    });
 });
 //# sourceMappingURL=workspaceActivity.test.js.map
