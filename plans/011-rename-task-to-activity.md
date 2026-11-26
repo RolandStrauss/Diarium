@@ -1,6 +1,6 @@
 ---
 title: "Plan 011: Rename Task to Activity"
-status: "Planning"
+status: "Complete"
 ---
 
 ## Status
@@ -10,7 +10,7 @@ status: "Planning"
 - Risk: LOW
 - Depends on: none
 - Category: enhancement
-- Status: TODO
+- Status: DONE
 
 ## Why
 
@@ -49,9 +49,9 @@ Keep existing CSS identifiers and internal field names unless a named refactor i
 
 ## Done criteria
 
-- [ ] User-facing text consistently says Activity.
-- [ ] Internal storage remains backward compatible.
-- [ ] Print, webview, PDF, tests, and docs agree.
+- [x] User-facing text consistently says Activity.
+- [x] Internal storage remains backward compatible.
+- [x] Print, webview, PDF, tests, and docs agree.
 
 ## STOP conditions
 

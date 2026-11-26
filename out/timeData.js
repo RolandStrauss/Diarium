@@ -230,7 +230,7 @@ function validateEntry(entry) {
         return 'Enter a valid calendar date.';
     }
     if (typeof entry.task !== 'string' || !entry.task.trim()) {
-        return 'Enter a task description.';
+        return 'Enter an activity description.';
     }
     if (typeof entry.timeIn !== 'string' || (entry.timeIn && !isValidTime(entry.timeIn))) {
         return 'Time In must use 24-hour HH:mm format.';

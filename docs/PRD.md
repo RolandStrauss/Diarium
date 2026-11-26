@@ -19,7 +19,7 @@ capabilities and treats the draft's additional requirements as proposed work, no
 
 Time Tracker provides two separate, local-first experiences:
 
-- **Manual timesheet:** Record multiple task-and-time pairs per date, review date-based totals, and produce a
+- **Manual timesheet:** Record multiple activity-and-time pairs per date, review date-based totals, and produce a
   configurable reporting-cycle PDF.
 - **Automatic file activity:** See cumulative time for selected local files while the VS Code window is focused,
   including idle time. Review a shared timer snapshot and export a time card.
@@ -55,7 +55,7 @@ or existing reports.
 These observations describe the active working-tree code, not verified release behavior. [E3-E8]
 
 - **Discovery:** Startup activation and nine `time-tracker.*` commands are declared in the manifest.
-- **Timesheet:** A webview provides entries, date and task filters, calendar-year grid, summaries, and a report.
+- **Timesheet:** A webview provides entries, date and activity filters, calendar-year grid, summaries, and a report.
 - **Outlook Calendar import:** A local `.ics` file up to 5 MiB can add timed and all-day entries after
   confirmation from Maintenance. Cancelled events, duplicate semantic entries, and unsupported entries are
   not added.
@@ -104,7 +104,7 @@ tests for these areas. Full release confidence still requires the checks in sect
   Timesheet panels reject stale edits. Other windows remain unavailable until the owner exits and they reload.
 - **Legacy totals:** Older `fileTimers` data remains separate and is not automatically merged. Users must
   reconcile its ownership and contents before relying on totals.
-- **Reports:** The paginated timesheet PDF rejects unsupported task characters. Timesheet PDF tasks support
+- **Reports:** The paginated timesheet PDF rejects unsupported activity characters. Timesheet PDF activities support
   printable ASCII only; the viewer controls physical print settings.
 - **Validation readiness:** Automated tests do not establish accessibility, cross-platform behavior, or release
   readiness by themselves. The Playwright workflow references tooling absent from the manifest.
@@ -127,7 +127,7 @@ Requirements apply to the release target. A baseline observation in section 4 do
 
 ### FR-01: Manual Entries
 
-- Each saved entry has a valid local calendar date, a nonblank task description, and zero, one, or two
+- Each saved entry has a valid local calendar date, a nonblank activity description, and zero, one, or two
   24-hour `HH:mm` times. The date is the shift's start date. Any number of entries may share a date.
 - Importing an Outlook `.ics` file creates timed or all-day manual entries only after explicit confirmation.
   Reject files larger than 5 MiB, skip cancelled events, and skip duplicate semantic entries already in
@@ -135,8 +135,8 @@ Requirements apply to the release target. A baseline observation in section 4 do
   changes automatic file activity.
 - Users can add, edit, or delete entries independently. Overlapping time ranges are allowed; totals sum each
   completed entry and may therefore exceed elapsed time when ranges overlap.
-- A task-only entry is saved but has no duration and is not incomplete. A row with no task and no times is blank.
-  A time without a task is invalid and must remain available for correction rather than being saved.
+- An activity-only entry is saved but has no duration and is not incomplete. A row with no activity and no times is blank.
+  A time without an activity is invalid and must remain available for correction rather than being saved.
 - Exactly one time makes an entry incomplete. Keep the entered value, label the row, and exclude it from
   completed counts and totals. Two valid times make it complete, including a zero-duration pair.
 - Reject invalid dates and times with a field-specific message; do not silently normalize or save them.
@@ -149,7 +149,7 @@ Requirements apply to the release target. A baseline observation in section 4 do
 
 - Show every date in the selected calendar year: 365 or 366 dates, with one row per saved entry and an editable
   blank row when a date has no entries. Never discard leap-day records.
-- Filter by exact date and case-insensitive task substring. With a task filter, search saved entries across
+- Filter by exact date and case-insensitive activity substring. With an activity filter, search saved entries across
   years; when both filters are set, apply both. With neither filter, show the selected year.
 - Show daily totals, filtered hours, and completed-entry counts for visible matching entries. Update them on add,
   edit, delete, and filter changes. Daily, Monday-to-Sunday weekly, calendar-month, and calendar-year summaries
@@ -159,7 +159,7 @@ Requirements apply to the release target. A baseline observation in section 4 do
   For example, 21 December 2026 ends on 20 January 2027, and 31 January 2026 ends on 27 February 2026.
 - Reject a start date if its calculated period cannot be represented as a four-digit calendar date.
   Do not overwrite the last valid period on rejection.
-- The cycle report includes each inclusive date, day of week, every task and its editable times and duration,
+- The cycle report includes each inclusive date, day of week, every activity and its editable times and duration,
   summed daily duration, total hours, and count of dates with one or more complete valid pairs. Distinguish
   weekends and incomplete entries with text or patterns as well as color.
 
@@ -172,9 +172,9 @@ Requirements apply to the release target. A baseline observation in section 4 do
   prompts for a destination. Cancellation writes nothing; errors are visible; success is reported only after
   the file is written or the viewer is opened, respectively.
 - The report uses landscape A4 PDF pages and includes every date and entry without clipping or omission. Repeat
-  table headings on each page. Include the task column, period boundaries, daily and period totals, and days
+  table headings on each page. Include the activity column, period boundaries, daily and period totals, and days
   logged. Use at least 7.5-point type and label weekends and incomplete entries in grayscale. Never silently
-  truncate or corrupt a task; explain content that cannot be represented and do not claim a complete report.
+  truncate or corrupt an activity; explain content that cannot be represented and do not claim a complete report.
 - The viewer and printer control paper size, scaling, and margins. Tell users to print the generated A4 pages
   at a suitable scale; do not promise to detect every external printer setting.
 
@@ -242,7 +242,7 @@ Requirements apply to the release target. A baseline observation in section 4 do
   Await writes before confirming success; report failures and allow a later retry.
 - Invalid or unreadable stored data must produce a visible diagnostic and a non-destructive recovery path.
   Preserve the original data; never silently replace it with an empty store or discard malformed records.
-- Read legacy single-entry-per-date records as one-entry lists and preserve their date, task, and time values.
+- Read legacy single-entry-per-date records as one-entry lists and preserve their date, activity, and time values.
 - Migrate known legacy data only after validating it. Preserve the source until the destination is durably
   written, and make migration repeatable. If old and new totals both exist and their relationship is unknown,
   retain both without automatically summing or overwriting them; require explicit user reconciliation.
@@ -266,7 +266,7 @@ Requirements apply to the release target. A baseline observation in section 4 do
   entry ID and value as already imported, add missing holidays once, and reject the complete import when an entry
   ID conflicts with a different local value.
 - Confirm export only after the user-selected file is written. On import or export failure, show an actionable
-  error and retain the previous durable data. Warn users that task and holiday descriptions can be sensitive.
+  error and retain the previous durable data. Warn users that activity and holiday descriptions can be sensitive.
 
 ### FR-10: Maintenance Tab
 
@@ -282,7 +282,7 @@ Requirements apply to the release target. A baseline observation in section 4 do
 ## 8. Non-Functional Requirements
 
 - **Privacy:** Do not transmit file paths, names, timesheet data, rates, or source contents. Manual timesheet
-  export is local and user-initiated; it contains task and holiday text that users must review before sharing.
+  export is local and user-initiated; it contains activity and holiday text that users must review before sharing.
   File tracking must not read file contents. Explain global storage and export sensitivity in user documentation.
 - **Security:** Escape dynamic text and attributes in their rendering contexts. Validate webview messages and
   apply a restrictive Content Security Policy (CSP); exported HTML needs no scripts or remote resources.
@@ -338,7 +338,7 @@ points, not evidence that the full release criteria have passed. [E8]
   malformed storage, and repeatable migration with conflicting legacy data.
 - Test portable timesheet export and import with valid, repeated, conflicting, invalid, oversized, canceled,
   and failed-write cases. Verify local preferences and automatic file-activity state remain unchanged.
-- Inspect generated PDFs for page count, every date and entry, totals, long tasks, weekends, incomplete entries,
+- Inspect generated PDFs for page count, every date and entry, totals, long activities, weekends, incomplete entries,
   grayscale readability, and unsupported characters. Test print-viewer and save success, cancellation, and failure.
 - Test cards with empty data, more than five files, repeated and special-character names, long names, Unicode,
   multi-page PDFs, and preview/export snapshot equality.

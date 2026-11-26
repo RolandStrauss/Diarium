@@ -92,7 +92,7 @@ export function renderReportPdf(data: ReportData): Promise<Buffer> {
 					}
 				}
 				if (/[^\x20-\x7e]/.test(entry.task)) {
-					throw new Error(`Cannot generate PDF: task for ${date} contains unsupported characters; only printable ASCII is supported.`);
+					throw new Error(`Cannot generate PDF: activity for ${date} contains unsupported characters; only printable ASCII is supported.`);
 				}
 				const labels = index === 0 ? holidays.map(holiday => `Public holiday: ${holiday.name}`) : [];
 				if (labels.some(label => /[^\x20-\x7e]/.test(label))) {
@@ -104,7 +104,7 @@ export function renderReportPdf(data: ReportData): Promise<Buffer> {
 					for (const character of text) {
 						if (document.widthOfString(line + character) > columnWidths[2] - padding * 2) {
 							if (!line) {
-								throw new Error(`Cannot generate PDF: task for ${date} cannot fit in the task column.`);
+								throw new Error(`Cannot generate PDF: activity for ${date} cannot fit in the activity column.`);
 							}
 							taskLines.push(line);
 							line = '';
@@ -133,7 +133,7 @@ export function renderReportPdf(data: ReportData): Promise<Buffer> {
 
 		const summary = `Total hours: ${formatDuration(totalMinutes)}     Days logged: ${loggedDates.size}`;
 		const footer = `Generated ${displayDate(new Date().toISOString().slice(0, 10))}. Weekend and incomplete entries are labeled.`;
-		const headers = ['Date', 'Day', 'Task', 'Time In', 'Time Out', 'Entry duration', 'Daily total'];
+		const headers = ['Date', 'Day', 'Activity', 'Time In', 'Time Out', 'Entry duration', 'Daily total'];
 		const period = `Reporting period: ${displayDate(data.periodStart)} to ${displayDate(end)}`;
 		const headerHeight = lineHeight + rowPadding;
 		const summaryHeight = 8 + 14 + lineHeight;

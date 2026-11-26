@@ -64,7 +64,7 @@ suite('Manual timesheet', () => {
         assert.strictEqual((0, timeData_1.durationMinutes)(entry), 225);
         assert.strictEqual((0, timeData_1.durationMinutes)({ ...entry, timeOut: '22:30' }), 0);
         assert.strictEqual((0, timeData_1.durationMinutes)({ ...entry, timeOut: '' }), undefined);
-        assert.strictEqual((0, timeData_1.validateEntry)({ ...entry, task: '   ' }), 'Enter a task description.');
+        assert.strictEqual((0, timeData_1.validateEntry)({ ...entry, task: '   ' }), 'Enter an activity description.');
         assert.strictEqual((0, timeData_1.validateEntry)({ ...entry, timeOut: '24:00' }), 'Time Out must use 24-hour HH:mm format.');
         assert.strictEqual((0, timeData_1.validateEntry)({ ...entry, timeIn: '', timeOut: '' }), undefined);
     });
@@ -526,7 +526,7 @@ suite('Manual timesheet', () => {
         ui.deliver({ type: 'entryCreated', requestId: request.requestId, entry: created });
         assert.match(ui.element('entries-body').innerHTML, /Edited before acknowledgement/);
     });
-    test('retains a time without a task as an unsaved draft', () => {
+    test('retains a time without an activity as an unsaved draft', () => {
         const ui = frontend();
         const state = { entries: {}, periodStart: '2026-10-21', hourlyRate: null, fileTimes: {}, activeFile: null };
         ui.send('state', state);

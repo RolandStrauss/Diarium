@@ -14,22 +14,22 @@ Run **Time Tracker: Open Timesheet** from the Command Palette.
 - File activity uses VS Code extension storage across workspaces. It stores
   local file paths and durations. It does not track untitled or virtual files,
   and it stays separate from daily entries and PDF reports.
-- Record multiple task-and-time pairs per date. A time out earlier than time in is treated as an overnight shift.
+- Record multiple activity-and-time pairs per date. A time out earlier than time in is treated as an overnight shift.
   Overlapping ranges are allowed and summed independently.
 - Edits to entries and report settings stay as drafts until you choose **Save** or **Discard**.
   Deleting an entry also requires saving its draft. Other drafts and saved values stay unchanged.
-- Browse the 365 or 366 dates in a calendar year, filter by date or task, and review filtered totals.
+- Browse the 365 or 366 dates in a calendar year, filter by date or activity, and review filtered totals.
 - Review daily, Monday-to-Sunday weekly, monthly, or yearly totals.
 - Use **Public holidays** to add or remove named holidays on specific dates. Multiple holidays can share a date.
   Holidays appear in entries and period reports, including exported PDFs, but do not add hours or affect estimates.
-  Dates do not repeat automatically. PDF holiday names, like tasks, must use printable ASCII.
+  Dates do not repeat automatically. PDF holiday names, like activities, must use printable ASCII.
 - Open **Period report** to choose inclusive start and end dates and configure an optional hourly rate.
   Save the period draft to apply it to the display, printed report, and PDF.
   **Print report** opens a landscape A4 PDF in your default PDF viewer; use the viewer's **Print** command to print it.
   A print copy is kept in extension storage without prompting for a save location.
   **Save as PDF** lets you choose where to save the report.
 - The hourly rate and estimated value stay on screen and are omitted from printed and PDF reports.
-- Timesheet PDFs use multiple landscape A4 pages when needed. Tasks support printable ASCII only; unsupported
+- Timesheet PDFs use multiple landscape A4 pages when needed. Activities support printable ASCII only; unsupported
   characters are reported instead of truncating or corrupting the report.
 - Incomplete time pairs are highlighted and excluded from totals. Entries and preferences are saved as JSON in VS Code extension storage and persist across restarts; existing extension-stored data is migrated automatically.
 - The timesheet tabs support keyboard arrow, Home, and End navigation. Validation errors move focus to the affected
@@ -58,7 +58,7 @@ Use **Export data** and **Import data** in **Maintenance**, or the matching Comm
 manual entries and public holidays between VS Code profiles or machines.
 
 - Exports use a versioned UTF-8 JSON file.
-- The file contains manual entries and holidays, including task and holiday text.
+- The file contains manual entries and holidays, including activity and holiday text.
   Review it before sharing because those descriptions can be sensitive.
 - Imports merge into the local timesheet. Repeating the same import adds nothing.
 - Existing local entries, reporting period, and hourly rate stay unchanged.

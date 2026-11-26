@@ -23,7 +23,7 @@ Plan 021 adds the read-only Fun metrics tab.
 | 009 | Maintenance tab | P1 | M | 002, 008 | DONE |
 | 007 | Align release evidence and documentation | P0 | S | 004-006, 008 | TODO |
 | 010 | Move Outlook Calendar import to Maintenance | P1 | S | 009 | DONE |
-| 011 | Rename Task to Activity | P1 | S | — | TODO |
+| 011 | Rename Task to Activity | P1 | S | — | DONE |
 | 012 | Configure export and import locations | P1 | M | 008 | TODO |
 | 013 | Track workspace open time | P1 | M | 002 | TODO |
 | 014 | Track workspace branches | P1 | M | 013 | TODO |

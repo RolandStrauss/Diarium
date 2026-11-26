@@ -931,7 +931,7 @@ export function activate(context: vscode.ExtensionContext): void {
 					const entry = message.entry;
 					if (!entry || typeof entry.date !== 'string' || typeof entry.task !== 'string' ||
 						typeof entry.timeIn !== 'string' || typeof entry.timeOut !== 'string' || !isValidDate(entry.date)) {
-						throw new Error('Enter a valid date, task, and time values.');
+						throw new Error('Enter a valid date, activity, and time values.');
 					}
 					const blank = !entry.task.trim() && !entry.timeIn && !entry.timeOut;
 					const validationError = blank && message.type === 'saveEntry' ? undefined : validateEntry(entry);
