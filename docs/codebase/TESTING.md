@@ -1,4 +1,4 @@
-## Test Stack and Commands
+# Test Stack and Commands
 
 - Primary framework: Mocha through `@vscode/test-cli`.
 - Extension environment: `@vscode/test-electron`.
@@ -34,7 +34,7 @@ GitHub Actions runs `xvfb-run -a npm test` on Ubuntu before package inspection.
 ## Test Scope Matrix
 
 | Scope | Covered? | Typical target | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Unit | Yes | Time data, file tracker, PDF, transfer parsing | Pure or narrowly isolated behavior |
 | Extension integration | Yes | Command registration and VS Code webviews | Runs in the VS Code test host |
 | File-system integration | Yes | Save/import/reset/ownership behavior | Uses temporary directories and real Node.js file operations |
@@ -62,4 +62,3 @@ GitHub Actions runs `xvfb-run -a npm test` on Ubuntu before package inspection.
 - `.github/workflows/playwright.yml`
 - `src/test/`
 - `docs/performance-evidence.md`
-

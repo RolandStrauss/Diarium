@@ -2,8 +2,8 @@
   "name": "Diarium",
   "displayName": "Diarium",
   "description": "Record work time and export local timesheet reports.",
-  "version": "0.1.10",
-  "publisher": "ferraria",
+  "version": "0.1.11",
+  "publisher": "RolandStrauss",
   "repository": {
     "type": "git",
     "url": "https://github.com/RolandStrauss/Diarium.git"
